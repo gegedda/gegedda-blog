@@ -1,0 +1,150 @@
+---
+import type { Page } from 'astro';
+
+/**
+ * 分页导航。纯链接，零 JS——分页是导航，用按钮 + history.pushState
+ * 会让「在新标签页打开第 3 页」和「复制链接」直接失效。
+ *
+ * 类型用 Astro 内置的 Page：paginate() 的返回值就是它，
+ * 自己再写一遍 Page 接口会在 Astro 升级时悄悄对不上。
+ */
+interface Props {
+	page: Page;
+}
+
+const { page } = Astro.props;
+const { currentPage, lastPage, url } = page;
+
+/**
+ * 页码窗口：首末页永远显示，当前页前后各留 1 页，中间断开处用省略号。
+ * 不这么做的话，文章多起来后页码会排成几十个格子，把布局撑爆。
+ */
+const WINDOW = 1;
+
+const numbers: (number | 'gap')[] = [];
+if (lastPage > 1) {
+	const candidates = new Set<number>([1, lastPage]);
+	for (let n = currentPage - WINDOW; n <= currentPage + WINDOW; n += 1) {
+		if (n >= 1 && n <= lastPage) candidates.add(n);
+	}
+
+	const sorted = [...candidates].sort((a, b) => a - b);
+	sorted.forEach((n, index) => {
+		// 相邻两个页码之间跳号，说明中间被折叠了
+		if (index > 0 && n - sorted[index - 1] > 1) numbers.push('gap');
+		numbers.push(n);
+	});
+}
+
+// 只有一页时整块不渲染，免得首页底部挂一个孤零零的「1」
+const show = lastPage > 1;
+---
+
+{
+	show && (
+		<nav class="pagination" aria-label="分页">
+			{url.prev ? (
+				<a class="pagination__step" href={url.prev} rel="prev">
+					上一页
+				</a>
+			) : (
+				// 占位而不是不渲染：少了它，第 1 页和最后一页的页码会左右横跳
+				<span class="pagination__step pagination__step--disabled" aria-hidden="true">
+					上一页
+				</span>
+			)}
+
+			<ul class="pagination__list">
+				{numbers.map((item) =>
+					item === 'gap' ? (
+						<li class="pagination__gap" aria-hidden="true">
+							…
+						</li>
+					) : (
+						<li>
+							<a
+								class="pagination__link"
+								/* 第 1 页是 `/`，第 n 页是 `/n/`——paginate() 把参数名
+								   硬编码为 page，`[...page]` 展开后就是这个形状。
+								   不要自己拼一套 /page/2/ 之类的地址，那是 404。 */
+								href={item === 1 ? url.first : `/${item}/`}
+								aria-current={item === currentPage ? 'page' : undefined}
+							>
+								{item}
+							</a>
+						</li>
+					),
+				)}
+			</ul>
+
+			{url.next ? (
+				<a class="pagination__step" href={url.next} rel="next">
+					下一页
+				</a>
+			) : (
+				<span class="pagination__step pagination__step--disabled" aria-hidden="true">
+					下一页
+				</span>
+			)}
+		</nav>
+	)
+}
+
+<style>
+	.pagination {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-top: 3.5rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--border);
+		font-size: 0.9rem;
+	}
+	.pagination__list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.pagination__link,
+	.pagination__step {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 2.25rem;
+		padding: 0.35rem 0.6rem;
+		border: 1px solid transparent;
+		border-radius: var(--r-md);
+		color: var(--fg-muted);
+		text-decoration: none;
+		/* 页码是数字，等宽让它们在切换页面时不左右抖动 */
+		font-variant-numeric: tabular-nums;
+		transition:
+			color var(--dur-fast) var(--ease),
+			background-color var(--dur-fast) var(--ease),
+			border-color var(--dur-fast) var(--ease);
+	}
+	.pagination__link:hover,
+	.pagination__step:hover {
+		color: var(--fg);
+		background-color: var(--bg-muted);
+	}
+	.pagination__link[aria-current='page'] {
+		color: var(--accent);
+		border-color: var(--border-strong);
+		background-color: var(--bg-subtle);
+		font-weight: 700;
+	}
+	.pagination__step--disabled {
+		color: var(--fg-subtle);
+		opacity: 0.5;
+	}
+	.pagination__gap {
+		padding: 0.35rem 0.2rem;
+		color: var(--fg-subtle);
+	}
+</style>

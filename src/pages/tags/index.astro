@@ -1,0 +1,64 @@
+---
+import PageLayout from '../../layouts/PageLayout.astro';
+import { collectTags, getPublishedPosts, tagUrl } from '../../utils/posts';
+
+const posts = await getPublishedPosts();
+const tags = collectTags(posts);
+---
+
+<PageLayout title="标签" description="按标签浏览全部文章。">
+	{
+		tags.length > 0 ? (
+			<ul class="tag-cloud">
+				{tags.map((item) => (
+					<li>
+						<a class="tag-cloud__link" href={tagUrl(item.tag)}>
+							{item.tag}
+							<span class="tag-cloud__count">{item.count}</span>
+						</a>
+					</li>
+				))}
+			</ul>
+		) : (
+			<p class="tag-cloud__empty">还没有文章，也就还没有标签。</p>
+		)
+	}
+</PageLayout>
+
+<style>
+	.tag-cloud {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+		margin: 0;
+		padding: 0;
+		/* 覆盖 .prose ul 的 disc：标签是胶囊，不需要项目符号 */
+		list-style: none;
+	}
+	.tag-cloud__link {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.4rem;
+		padding: 0.3rem 0.7rem;
+		border: 1px solid var(--border);
+		border-radius: var(--r-md);
+		color: var(--fg-muted);
+		background-color: var(--bg-subtle);
+		text-decoration: none;
+		transition:
+			color var(--dur-fast) var(--ease),
+			border-color var(--dur-fast) var(--ease);
+	}
+	.tag-cloud__link:hover {
+		color: var(--accent);
+		border-color: var(--border-strong);
+	}
+	.tag-cloud__count {
+		color: var(--fg-subtle);
+		font-size: 0.75rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.tag-cloud__empty {
+		color: var(--fg-muted);
+	}
+</style>

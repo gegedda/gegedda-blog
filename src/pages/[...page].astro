@@ -1,0 +1,65 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Pagination from '../components/Pagination.astro';
+import PostList from '../components/PostList.astro';
+import { PAGE_SIZE, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getPublishedPosts } from '../utils/posts';
+
+/**
+ * 首页 = 分页列表，第 1 页在 `/`，第 2 页起在 `/2/`、`/3/`…
+ *
+ * 文件名**必须**是 `[...page].astro`，两个原因，都踩过：
+ *  1. paginate() 把参数名硬编码为 `page`（不是 route 名，改不了）；
+ *  2. 它要求 rest 参数形式。写成 `[page].astro` 会得到一份**能构建成功、
+ *     但首页 404** 的产物——构建日志里没有任何异常。
+ * 另外不要试图同时建 `posts/[...page].astro` 和 `posts/[...slug].astro`：
+ * Astro 的 detectRouteCollision() 对预渲染路由直接 early-return，
+ * 两个路由都编译成 /posts/(.*)，构建看着正常，dev server 静默错配。
+ * 所以分页留在根路径，文章详情在 /posts/ 下，两者不同前缀，天然不撞。
+ */
+export const getStaticPaths = (async ({ paginate }) => {
+	const posts = await getPublishedPosts();
+	return paginate(posts, { pageSize: PAGE_SIZE });
+}) satisfies GetStaticPaths;
+
+const { page } = Astro.props;
+---
+
+<DocsLayout
+	title={SITE_TITLE}
+	description={page.currentPage === 1 ? SITE_DESCRIPTION : `全部文章 · 第 ${page.currentPage} 页`}
+>
+	<header class="home-header">
+		<h1 class="home-header__title">{SITE_TITLE}</h1>
+		<p class="home-header__desc">{SITE_DESCRIPTION}</p>
+	</header>
+
+	{/*
+		首篇大图只在第 1 页开：第 2 页的第一篇只是第 11 新的文章，
+		把它做成巨图会让读者以为那是推荐位。这样「置顶大图 = 最新一篇」
+		在任何一页都为真。
+	*/}
+	<PostList posts={page.data} featuredFirst={page.currentPage === 1} />
+
+	<Pagination page={page} />
+</DocsLayout>
+
+<style>
+	.home-header {
+		margin-bottom: 2.5rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.home-header__title {
+		margin: 0 0 0.4rem;
+		font-size: 1.9rem;
+		line-height: 1.3;
+	}
+	.home-header__desc {
+		margin: 0;
+		color: var(--fg-muted);
+		/* 导语限制到 30em，否则在宽屏上会拉成一整行很长的中文 */
+		max-width: 30em;
+	}
+</style>

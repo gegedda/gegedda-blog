@@ -9,7 +9,15 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
 	// 正式站点地址：影响 sitemap、canonical URL 与 RSS 中的链接
 	site: 'https://gegedda-blog.pages.dev',
-	integrations: [mdx(), sitemap()],
+	integrations: [
+		mdx(),
+		sitemap({
+			// 分页页不进 sitemap：`/2/`、`/3/` 的内容是首页内容的一部分，
+			// 让它们和 `/` 一起被索引是重复内容，只会分散首页的权重。
+			// 它们仍可被抓取（有正常链接、没有 noindex），只是不主动提交。
+			filter: (page) => !/\/\d+\/$/.test(new URL(page).pathname),
+		}),
+	],
 	// Tailwind v4 走 Vite 插件，不要用 @astrojs/tailwind
 	//（那个包 peer 锁死在 Astro 3–5 + Tailwind 3，与本项目不兼容）
 	vite: {

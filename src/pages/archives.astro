@@ -1,0 +1,112 @@
+---
+import PageLayout from '../layouts/PageLayout.astro';
+import { getPublishedPosts, groupByYearMonth, postDay, postUrl } from '../utils/posts';
+
+const posts = await getPublishedPosts();
+const years = groupByYearMonth(posts);
+
+/**
+ * 月份标签用常量数组，不用 Intl.DateTimeFormat。
+ * 「1月」和时区无关，却要为此构造一个 Date——那正是上面 postDay 踩过的坑：
+ * 一旦为了取标签而造 Date，就又多了一处时区依赖。
+ */
+const MONTH_LABELS = [
+	'1 月',
+	'2 月',
+	'3 月',
+	'4 月',
+	'5 月',
+	'6 月',
+	'7 月',
+	'8 月',
+	'9 月',
+	'10 月',
+	'11 月',
+	'12 月',
+];
+---
+
+<PageLayout title="归档" description="按年月浏览全部文章。">
+	{
+		years.map((group) => (
+			<section class="archive__year">
+				<h2 class="archive__year-title">
+					{group.year}
+					<span class="archive__year-count">{group.count} 篇</span>
+				</h2>
+
+				{group.months.map((monthGroup) => (
+					<div class="archive__month">
+						<h3 class="archive__month-title">{MONTH_LABELS[monthGroup.month - 1]}</h3>
+						<ul class="archive__list">
+							{monthGroup.posts.map((post) => (
+								<li class="archive__item">
+									<time class="archive__date" datetime={post.data.pubDate.toISOString()}>
+										{String(postDay(post)).padStart(2, '0')}
+									</time>
+									<a class="archive__link" href={postUrl(post)}>
+										{post.data.title}
+									</a>
+								</li>
+							))}
+						</ul>
+					</div>
+				))}
+			</section>
+		))
+	}
+
+	{
+		/* 一篇都没有时给一句说明，而不是留一片空白——空白的归档页看起来像坏了 */
+		posts.length === 0 && <p class="archive__empty">还没有文章。</p>
+	}
+</PageLayout>
+
+<style>
+	.archive__year + .archive__year {
+		margin-top: 3rem;
+	}
+	.archive__year-title {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		font-size: 1.5rem;
+	}
+	.archive__year-count {
+		color: var(--fg-subtle);
+		font-size: 0.8rem;
+		font-weight: 400;
+		/* 年份是数字，等宽避免多个年份之间对不齐 */
+		font-variant-numeric: tabular-nums;
+	}
+	.archive__month + .archive__month {
+		margin-top: 1.75rem;
+	}
+	.archive__month-title {
+		color: var(--fg-subtle);
+		font-size: 0.8rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+	}
+	.archive__list {
+		margin: 0;
+		padding: 0;
+		/* 覆盖 .prose ul 的 disc 项目符号：这里每行已经有日期做视觉锚点 */
+		list-style: none;
+	}
+	.archive__item {
+		display: flex;
+		align-items: baseline;
+		gap: 0.85rem;
+		padding: 0.3rem 0;
+	}
+	.archive__date {
+		flex: none;
+		color: var(--fg-subtle);
+		font-size: 0.85rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.archive__empty {
+		color: var(--fg-muted);
+	}
+</style>

@@ -10,8 +10,7 @@ const year = new Date().getFullYear();
 	<p class="site-footer__copy">&copy; {year} {SITE_TITLE}</p>
 	<nav class="site-footer__links" aria-label="页脚">
 		<a href={SITE_REPO} rel="noopener" target="_blank">GitHub</a>
-		{/* 阶段 4 会把路由改名成 /feed.xml，届时这里一起改，避免中间态出现死链 */}
-		<a href="/rss.xml">
+		<a href="/feed.xml">
 			<Icon name="rss" />
 			RSS
 		</a>
