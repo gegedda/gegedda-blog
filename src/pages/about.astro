@@ -1,0 +1,28 @@
+---
+import Layout from '../layouts/BlogPost.astro';
+import { SITE_TITLE } from '../consts';
+---
+
+<Layout
+	title={`关于 ${SITE_TITLE}`}
+	description="关于本站与作者"
+	pubDate={new Date('2026-09-20')}
+>
+	<p>这里是本站的"关于"页面。请在这里介绍你自己：你是谁、为什么写博客、主要写什么方向的内容，以及如何联系你。</p>
+
+	<h2>关于本站</h2>
+	<p>
+		本站基于 <a href="https://astro.build/" target="_blank">Astro</a> 构建，内容以 Markdown 写作，
+		通过 Git 管理，部署在 Cloudflare Pages。这是一个由零搭建的个人博客项目。
+	</p>
+
+	<h2>写作方向（待补充）</h2>
+	<ul>
+		<li>技术学习笔记</li>
+		<li>项目实践记录</li>
+		<li>个人思考与总结</li>
+	</ul>
+
+	<h2>联系我</h2>
+	<p>TODO：在此填写你的邮箱或社交账号。</p>
+</Layout>
