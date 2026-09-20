@@ -6,9 +6,8 @@ import { defineConfig, fontProviders } from 'astro/config';
 
 // https://astro.build/config
 export default defineConfig({
-	// TODO: 部署后改为你的正式网址（如 https://your-name.pages.dev 或自定义域名），
-	// 影响 sitemap、canonical URL 与 RSS 中的链接。
-	site: 'https://your-blog.pages.dev',
+	// 正式站点地址：影响 sitemap、canonical URL 与 RSS 中的链接
+	site: 'https://gegedda-blog.pages.dev',
 	integrations: [mdx(), sitemap()],
 	fonts: [
 		{
