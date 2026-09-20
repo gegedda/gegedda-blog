@@ -3,171 +3,413 @@
 
   ⚠️ 分层很重要：Tailwind v4 把工具类放进 @layer utilities，
   而「未分层的 CSS 永远胜过已分层的 CSS，与选择器优先级无关」。
-  所以下面所有手写规则必须待在 @layer base 里，否则 body { font-size }
+  所以下面所有手写规则必须待在 @layer 里，否则 body { font-size }
   这类规则会把 text-sm、mb-8 之类的工具类静默压掉——不报错，只是不生效。
 */
 @import "tailwindcss";
 
-/* 暗色变体：跟随 <html data-theme="dark">，而不是 prefers-color-scheme。
+/* 暗色变体：跟随 <html data-theme="dark">。
    注意 data-theme 由一段内联脚本写入，因此无 JS 时它永远不存在——
-   这也意味着标记里不该写 dark: 工具类，暗色应通过 token 切换。 */
+   暗色本身靠下面的 light-dark() 走系统偏好，dark: 工具类别用。 */
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
-/* 未分层：自定义属性的声明不参与和工具类的竞争，放外面最安全 */
+/* ══════════════════════════════════════════════════════════════
+   一、令牌
+   ══════════════════════════════════════════════════════════════
+
+   两条硬规则，违反任何一条都会得到「间歇性丢失的声明」：
+
+   1. 原始值放普通 :root，不放 @theme。
+      Tailwind v4 会 tree-shake 掉没有工具类引用的 @theme 变量，
+      手写 CSS 再去 var() 它就会静默失效——不报错，只是没颜色。
+   2. light-dark() 一次定义明暗两值，切换只翻 color-scheme。
+      否则整套暗色令牌要在 [data-theme='dark'] 和
+      @media (prefers-color-scheme: dark) 里各抄一遍，
+      而「无 JS 用户跟随系统」那一档又必须走媒体查询，抄两遍躲不掉。
+*/
 :root {
-	--accent: #2337ff;
-	--accent-dark: #000d8a;
-	--black: 15, 18, 25;
-	--gray: 96, 115, 159;
-	--gray-light: 229, 233, 240;
-	--gray-dark: 34, 41, 57;
-	--gray-gradient: rgba(var(--gray-light), 50%), #fff;
-	--box-shadow:
-		0 2px 6px rgba(var(--gray), 25%), 0 8px 24px rgba(var(--gray), 33%),
-		0 16px 32px rgba(var(--gray), 33%);
+	/* 亮色是基准；data-theme / 系统偏好只改 color-scheme */
+	color-scheme: light;
+
+	/* ── 中性灰阶 ──
+	   不用蓝灰：汉字墨量约为拉丁的两倍，冷灰底会让正文发虚。
+	   行尾数字是对 --bg 的实测对比度，正文门槛 4.5:1。 */
+	--bg: light-dark(#fdfdfc, #17181a); /* 暖调微米白，不是纯白 */
+	--bg-subtle: light-dark(#f6f6f4, #1e2022); /* 行内码、表头 */
+	--bg-muted: light-dark(#efefec, #26282b);
+	--fg: light-dark(#1b1b19, #dfe0e2); /* 16.95 / 13.45 */
+	--fg-muted: light-dark(#5a5a56, #9b9ea3); /* 6.81 / 6.61 — 日期、元信息 */
+	--fg-subtle: light-dark(#6e6e66, #82858a); /* 5.05 / 4.80 */
+	--border: light-dark(#e3e3df, #2e3134);
+	--border-strong: light-dark(#cfcfc9, #3d4145);
+	/* 单一强调色。旧值 #60739f 画在渐变带上实测 4.29:1，低于 AA */
+	--accent: light-dark(#4a4ecb, #a5a8ff); /* 6.36 / 8.16 */
+	--accent-hover: light-dark(#3a3eb0, #c0c2ff); /* 8.27 / 10.49 */
+
+	/* ── 字体栈：零下载 ──
+	   中文用 system-ui 打头即可：<html lang="zh-CN"> 会让各平台自己挑对
+	   中文字体（PingFang / 微软雅黑 / 思源黑体）。后面显式列兜底，
+	   是为了应对 system-ui 落到拉丁字体的情况。 */
+	--font-stack-sans:
+		system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+		"Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
+		"Noto Sans CJK SC", sans-serif;
+	--font-stack-mono:
+		ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+		"Sarasa Mono SC", "Noto Sans Mono CJK SC", monospace;
+
+	--r-sm: 3px; /* 行内码、标签 */
+	--r-md: 6px; /* 按钮、导航 */
+	--r-lg: 10px; /* 卡片、图片、代码块 */
+
+	--dur-fast: 120ms;
+	--dur-base: 200ms;
+	--dur-slow: 320ms;
+	--ease: cubic-bezier(0.2, 0, 0, 1);
+
+	/* ── 过渡别名（阶段 3 删除）──
+	   index / blog-index / BlogPost / Header / Footer / 404 的内联样式
+	   仍在消费这些老名字。必须是「逗号分隔的三元组」形式：消费方写的是
+	   rgb(var(--x)) 和 rgba(var(--black), 5%)，换成空格分隔会让后者
+	   的逗号语法整条失效。阶段 3 重写完这些文件后，连同本节一起删掉。 */
+	--black: 27, 27, 25;
+	--gray: 110, 110, 102;
+	--gray-light: 227, 227, 223;
+	--gray-dark: 27, 27, 25;
+	/* ⚠️ light-dark() 只吃两个参数。多值列表（阴影这种带逗号的）必须先
+	   各自命名再 var() 引进来——直接写 light-dark(a, b, c, d) 不会报错：
+	   自定义属性在解析期不校验，要等 computed-value 期才失效，
+	   结果是 box-shadow 整条变成 unset，阴影凭空消失。 */
+	--shadow-light:
+		0 1px 2px rgba(27, 27, 25, 6%), 0 4px 12px rgba(27, 27, 25, 8%);
+	--shadow-dark:
+		0 1px 2px rgba(0, 0, 0, 45%), 0 4px 12px rgba(0, 0, 0, 35%);
+	--box-shadow: light-dark(var(--shadow-light), var(--shadow-dark));
+}
+
+/* 暗色只翻这一个属性：light-dark() 会跟着重算上面全部令牌。
+   color-scheme 顺带把滚动条、表单控件、默认背景也切过去。 */
+:root[data-theme='dark'] {
+	color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+	/* 没存过偏好（data-theme 不存在）时跟随系统；
+	   用户显式选过亮色就尊重他。 */
+	:root:not([data-theme='light']) {
+		color-scheme: dark;
+	}
+}
+
+/* 清掉 Tailwind 的默认调色板：这个站只有下面这一套颜色。
+   留着两百多个用不到的颜色，只会让「这里该用哪个」这个问题重新出现。 */
+@theme {
+	--color-*: initial;
+	/* 这三个不是装饰色，是构图工具（透明边框占位、遮罩），留着 */
+	--color-transparent: transparent;
+	--color-current: currentColor;
+	--color-inherit: inherit;
+}
+
+/* 只做工具类别名，不存原始值（见上面规则 1）。
+   inline = 工具类里直接写 var(--fg)，而不是再套一层 --color-fg。 */
+@theme inline {
+	--color-bg: var(--bg);
+	--color-bg-subtle: var(--bg-subtle);
+	--color-bg-muted: var(--bg-muted);
+	--color-fg: var(--fg);
+	--color-fg-muted: var(--fg-muted);
+	--color-fg-subtle: var(--fg-subtle);
+	--color-border: var(--border);
+	--color-border-strong: var(--border-strong);
+	--color-accent: var(--accent);
+	--color-accent-hover: var(--accent-hover);
+
+	--font-sans: var(--font-stack-sans);
+	--font-mono: var(--font-stack-mono);
+
+	--radius-sm: var(--r-sm);
+	--radius-md: var(--r-md);
+	--radius-lg: var(--r-lg);
 }
 
 @layer base {
+	html {
+		/* 不要在这里写 overflow-x: hidden。它会杀掉所有后代的 sticky
+		   （侧栏和目录都靠 sticky），而症状是「锚点就是不吸顶」。
+		   横向溢出交给 pre / table 自己 overflow-x: auto。 */
+		-webkit-text-size-adjust: 100%;
+		scroll-behavior: smooth;
+
+		/* 中文断行禁则：不让标点落在行首行尾。几乎没博客会设，性价比最高的一行 */
+		line-break: strict;
+		/* 中英之间自动加间隙。Chrome 已默认开，显式写是为了打开 Safari 的。
+		   ⚠️ 这条生效后，Markdown 里不要再手动给中英之间加空格——
+		   人工空格 + 自动间距会叠加成双倍间距。已有文章不用回头改。 */
+		text-autospace: normal;
+
+		/* 只合成字重，不合成倾斜：系统字体多半没有中文斜体，
+		   不禁掉的话 <em> 会得到一个歪掉的假斜体。
+		   顺带修掉 .last-updated-on 的 font-style: italic。 */
+		font-synthesis: weight;
+	}
+
 	body {
-		font-family: var(--font-atkinson);
 		margin: 0;
-		padding: 0;
-		text-align: left;
-		background: linear-gradient(var(--gray-gradient)) no-repeat;
-		background-size: 100% 600px;
+		background-color: var(--bg);
+		color: var(--fg);
+		font-family: var(--font-stack-sans);
+		/* 1.0625rem = 17px。汉字在同样 px 下视觉比拉丁大 15–20%，
+		   原来的 20px 在中文里偏大。用 rem 是为了浏览器字号偏好仍能缩放 */
+		font-size: 1.0625rem;
+		/* 1.75：汉字占满 em 框，没有天然的行间空气，拉丁的 1.6 在中文里太挤 */
+		line-height: 1.75;
 		word-wrap: break-word;
 		overflow-wrap: break-word;
-		color: rgb(var(--gray-dark));
-		font-size: 20px;
-		line-height: 1.7;
 	}
-	main {
-		width: 720px;
-		max-width: calc(100% - 2em);
-		margin: auto;
-		padding: 3em 1em;
-	}
+
+	/* 标题 1.35 而非 1.2 —— 1.2 会切掉贴边的中文标点。
+	   中文标题不设 letter-spacing：拉丁那套负字距会让汉字竖画粘连。 */
 	h1,
 	h2,
 	h3,
 	h4,
 	h5,
 	h6 {
-		margin: 0 0 0.5rem 0;
-		color: rgb(var(--black));
-		line-height: 1.2;
+		margin: 2em 0 0.7em;
+		color: var(--fg);
+		font-weight: 700;
+		line-height: 1.35;
+		text-wrap: balance;
 	}
 	h1 {
-		font-size: 3.052em;
+		font-size: 1.7em;
 	}
 	h2 {
-		font-size: 2.441em;
+		font-size: 1.4em;
 	}
 	h3 {
-		font-size: 1.953em;
+		font-size: 1.2em;
 	}
 	h4 {
-		font-size: 1.563em;
+		font-size: 1.05em;
 	}
 	h5 {
-		font-size: 1.25em;
+		font-size: 1em;
 	}
+	h6 {
+		font-size: 0.9em;
+		color: var(--fg-muted);
+	}
+	/* 顶到容器上沿的标题不该有上边距 */
+	:where(h1, h2, h3, h4, h5, h6):first-child {
+		margin-top: 0;
+	}
+
 	strong,
 	b {
 		font-weight: 700;
 	}
+
 	a {
 		color: var(--accent);
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.18em;
+		text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+		transition:
+			color var(--dur-fast) var(--ease),
+			text-decoration-color var(--dur-fast) var(--ease);
 	}
-	p {
-		margin-bottom: 1em;
+	a:hover {
+		color: var(--accent-hover);
+		text-decoration-color: currentColor;
 	}
-	.prose p {
-		margin-bottom: 2em;
+
+	code,
+	kbd,
+	samp,
+	pre {
+		font-family: var(--font-stack-mono);
 	}
-	table {
-		width: 100%;
-	}
-	img {
+
+	img,
+	video {
 		max-width: 100%;
 		height: auto;
-		border-radius: 8px;
 	}
-	code {
-		padding: 2px 5px;
-		background-color: rgb(var(--gray-light));
-		border-radius: 2px;
-	}
-	pre {
-		padding: 1.5em;
-		border-radius: 8px;
-	}
-	pre > code {
-		all: unset;
-	}
-	blockquote {
-		border-left: 4px solid var(--accent);
-		padding: 0 0 0 20px;
-		margin: 0;
-		font-size: 1.333em;
-	}
+
 	hr {
 		border: none;
-		border-top: 1px solid rgb(var(--gray-light));
+		border-top: 1px solid var(--border);
+		margin: 2.5em 0;
 	}
-	@media (max-width: 720px) {
-		body {
-			font-size: 18px;
+
+	/* 焦点环用强调色：实测对 --bg / --bg-subtle / --bg-muted 都过 3:1 */
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: var(--r-sm);
+	}
+
+	::selection {
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
+	}
+
+	/* 过渡：内容宽度。阶段 3 由布局接管，现在各页的内联样式仍在覆盖它 */
+	main {
+		width: 100%;
+		max-width: 42rem;
+		margin-inline: auto;
+		padding: 3em 1em;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		html {
+			scroll-behavior: auto;
 		}
-		main {
-			padding: 1em;
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
 		}
 	}
 
-	/*
-	  以下为 Preflight 补偿层。
-	  Preflight 会把所有元素的 margin/padding/border 归零、并给 ul/ol 去掉项目符号，
-	  目的是让工具类从白纸开始。已有的正文样式没有显式写这些值，所以要补回来——
-	  否则正文里的列表会变成没有符号也没有缩进的一坨。
-	  阶段 2 重写排版层时，这块会被正经的 .prose 规则取代。
-	*/
+	@media (max-width: 720px) {
+		body {
+			font-size: 1rem;
+		}
+	}
+}
+
+@layer components {
+	/* 正文测量宽度用 em，不用 ch。
+	   ch 是「0」的宽度，在拉丁字体里约 0.5em，所以 65ch 对中文只有 ~35 字，
+	   而且随字体浮动；汉字宽度定义上就是 1em，38em 恒等于 38 字。 */
+	.prose {
+		max-width: 38em;
+		color: var(--fg);
+	}
+	.prose > :first-child {
+		margin-top: 0;
+	}
+
+	/* 段间距 1.05em。原来是 2em，17px 下是 34px，中文读起来接近两个空行。
+	   不加 text-indent: 2em —— 那是印刷惯例，中文网页惯例是段间空。 */
+	.prose p {
+		margin: 0 0 1.05em;
+	}
+
+	/* Preflight 把 ul/ol 的项目符号和缩进都清零了，这里补回来 */
+	.prose ul,
+	.prose ol {
+		margin: 0 0 1.05em;
+		padding-inline-start: 1.5em;
+	}
 	.prose ul {
 		list-style: disc;
-		padding-inline-start: 1.5em;
-		margin: 0 0 1em;
 	}
 	.prose ol {
 		list-style: decimal;
-		padding-inline-start: 1.5em;
-		margin: 0 0 1em;
 	}
 	.prose li > ul,
 	.prose li > ol {
 		margin-bottom: 0;
 	}
 	.prose li {
-		margin-bottom: 0.35em;
+		margin-bottom: 0.3em;
 	}
+	.prose li::marker {
+		color: var(--fg-subtle);
+	}
+
+	.prose blockquote {
+		margin: 1.5em 0;
+		padding: 0.1em 0 0.1em 1.1em;
+		border-left: 3px solid var(--border-strong);
+		color: var(--fg-muted);
+	}
+	.prose blockquote > :last-child {
+		margin-bottom: 0;
+	}
+
+	/* <em> 用着重号而不是斜体：系统字体多半没有中文斜体，程序化倾斜出来
+	   的假斜体在汉字上很难看。
+	   ⚠️ 代价：拿 <em> 强调英文短语时也会带点。 */
+	.prose em {
+		font-style: normal;
+		text-emphasis: dot;
+		text-emphasis-position: under;
+	}
+
+	.prose code {
+		padding: 0.15em 0.35em;
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-radius: var(--r-sm);
+		font-size: 0.9em;
+	}
+
 	.prose pre {
 		margin: 0 0 1.5em;
+		padding: 1.1em 1.2em;
 		overflow-x: auto;
+		border: 1px solid var(--border);
+		border-radius: var(--r-lg);
+		font-size: 0.9em;
+		line-height: 1.6;
+		tab-size: 2;
 	}
+	.prose pre > code {
+		all: unset;
+		font-family: var(--font-stack-mono);
+		font-size: 1em;
+	}
+
 	.prose table {
 		display: block;
+		width: 100%;
 		overflow-x: auto;
 		border-collapse: collapse;
 		margin: 0 0 1.5em;
+		font-size: 0.95em;
 	}
 	.prose th,
 	.prose td {
-		border: 1px solid rgb(var(--gray-light));
+		border: 1px solid var(--border);
 		padding: 0.5em 0.75em;
 		text-align: left;
 	}
 	.prose th {
-		background-color: rgb(var(--gray-light));
+		background-color: var(--bg-subtle);
+		font-weight: 700;
 	}
-	h6 {
-		font-size: 1em;
+
+	.prose img {
+		margin: 1.5em 0;
+	}
+
+	/* ── Shiki 双主题 ──
+	   Shiki 把两套主题的值都写成内联自定义属性（--shiki-light / --shiki-dark），
+	   内联样式压过样式表，所以必须 !important。
+	   用 light-dark() 是为了让「跟随系统」和「手动切换」共用同一套规则——
+	   换成 [data-theme='dark'] 选择器就漏掉无 JS 那一档。 */
+	.prose .astro-code,
+	.prose .astro-code span {
+		color: light-dark(var(--shiki-light), var(--shiki-dark)) !important;
+		background-color: light-dark(var(--shiki-light-bg), var(--shiki-dark-bg)) !important;
+		font-style: light-dark(
+			var(--shiki-light-font-style, normal),
+			var(--shiki-dark-font-style, normal)
+		) !important;
+		font-weight: light-dark(
+			var(--shiki-light-font-weight, normal),
+			var(--shiki-dark-font-weight, normal)
+		) !important;
+		text-decoration: light-dark(
+			var(--shiki-light-text-decoration, none),
+			var(--shiki-dark-text-decoration, none)
+		) !important;
 	}
 }

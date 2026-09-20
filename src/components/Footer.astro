@@ -9,7 +9,8 @@ const today = new Date();
 <style>
 	footer {
 		padding: 2em 1em 6em 1em;
-		background: linear-gradient(var(--gray-gradient)) no-repeat;
+		/* 渐变带去掉：它在 body 和 footer 上各画了一次（双重色带），
+		   在三栏布局里还会和 sticky 侧栏打架。 */
 		color: rgb(var(--gray));
 		text-align: center;
 		font-size: 0.9rem;

@@ -38,7 +38,9 @@ import HeaderLink from './HeaderLink.astro';
 	}
 	nav a {
 		padding: 1em 0.5em;
-		color: var(--black);
+		/* 曾经写的是 var(--black)，而 --black 是 RGB 三元组 → 整条声明被丢弃。
+		   阶段 3 会用 SiteHeader + aria-current 取代这套高亮。 */
+		color: var(--fg);
 		border-bottom: 4px solid transparent;
 		text-decoration: none;
 	}
