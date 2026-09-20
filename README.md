@@ -1,4 +1,4 @@
-# 个人博客
+# gegedda · 个人博客
 
 基于 [Astro](https://astro.build/) 构建的个人博客。内容以 Markdown 写作，通过 Git 管理，部署在 Cloudflare Pages（规划中）。
 
