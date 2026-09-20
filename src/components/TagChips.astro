@@ -1,0 +1,50 @@
+---
+import { tagUrl } from '../utils/posts';
+
+interface Props {
+	tags: string[];
+}
+
+const { tags } = Astro.props;
+---
+
+{
+	tags.length > 0 && (
+		<ul class="tag-chips">
+			{tags.map((tag) => (
+				<li>
+					<a class="tag-chip" href={tagUrl(tag)}>
+						{tag}
+					</a>
+				</li>
+			))}
+		</ul>
+	)
+}
+
+<style>
+	.tag-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.tag-chip {
+		display: inline-block;
+		padding: 0.1rem 0.5rem;
+		color: var(--fg-muted);
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		font-size: 0.8rem;
+		text-decoration: none;
+		transition:
+			color var(--dur-fast) var(--ease),
+			border-color var(--dur-fast) var(--ease);
+	}
+	.tag-chip:hover {
+		color: var(--accent);
+		border-color: var(--accent);
+	}
+	/* 标签之间不加 "#"：中文标签配上 # 视觉噪音很大，
+	   而胶囊形状本身已经说明了它是标签 */
+</style>

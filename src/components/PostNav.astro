@@ -1,0 +1,116 @@
+---
+import { postUrl, type Post } from '../utils/posts';
+import Icon from './Icon.astro';
+
+/**
+ * 上一篇 / 下一篇。
+ *
+ * 中文里「上一篇」有歧义（更早的？刚刚读过的？），所以靠位置消歧：
+ * 左侧永远是更早的一篇，右侧永远是更新的一篇，和列表页的时间倒序一致。
+ */
+interface Props {
+	/** 更早的一篇 */
+	older?: Post;
+	/** 更新的一篇 */
+	newer?: Post;
+}
+
+const { older, newer } = Astro.props;
+const hasAny = Boolean(older || newer);
+---
+
+{
+	hasAny && (
+		<nav class="post-nav" aria-label="相邻文章">
+			{older ? (
+				<a class="post-nav__item post-nav__item--older" href={postUrl(older)}>
+					<span class="post-nav__hint">
+						<Icon name="arrow-left" />
+						上一篇
+					</span>
+					<span class="post-nav__title">{older.data.title}</span>
+				</a>
+			) : (
+				/* 空占位：只有一侧有文章时，靠它把另一侧顶到正确的那一列 */
+				<span aria-hidden="true" />
+			)}
+			{newer ? (
+				<a class="post-nav__item post-nav__item--newer" href={postUrl(newer)}>
+					<span class="post-nav__hint">
+						下一篇
+						<Icon name="arrow-right" />
+					</span>
+					<span class="post-nav__title">{newer.data.title}</span>
+				</a>
+			) : (
+				<span aria-hidden="true" />
+			)}
+		</nav>
+	)
+}
+
+<style>
+	.post-nav {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+		margin-top: 3.5rem;
+		padding-top: 2rem;
+		border-top: 1px solid var(--border);
+	}
+	.post-nav__item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		padding: 0.85rem 1rem;
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-radius: var(--r-md);
+		text-decoration: none;
+		transition:
+			border-color var(--dur-fast) var(--ease),
+			background-color var(--dur-fast) var(--ease);
+	}
+	.post-nav__item:hover {
+		border-color: var(--accent);
+	}
+	.post-nav__item--newer {
+		text-align: right;
+	}
+	.post-nav__hint {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		color: var(--fg-subtle);
+		font-size: 0.8rem;
+	}
+	.post-nav__item--newer .post-nav__hint {
+		justify-content: flex-end;
+	}
+	.post-nav__title {
+		color: var(--fg);
+		font-size: 0.95rem;
+		font-weight: 700;
+		line-height: 1.5;
+	}
+	.post-nav__item:hover .post-nav__title {
+		color: var(--accent);
+	}
+	.post-nav :global(.icon) {
+		width: 0.9em;
+		height: 0.9em;
+	}
+	@media (max-width: 48rem) {
+		.post-nav {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		/* 窄屏下顺序读起来更顺：更新的在上，更早的在下 */
+		.post-nav__item--newer {
+			order: -1;
+			text-align: left;
+		}
+		.post-nav__item--newer .post-nav__hint {
+			justify-content: flex-start;
+		}
+	}
+</style>

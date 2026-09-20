@@ -1,0 +1,117 @@
+---
+import { SOCIAL_LINKS } from '../consts';
+import { getPublishedPosts, groupByYear } from '../utils/posts';
+import NavLinks from './NavLinks.astro';
+import PostTree from './PostTree.astro';
+
+/**
+ * 左栏。自己取文章树，这样七个页面不必各写一遍——放在 DocsLayout 里
+ * 更是会让每个用到 DocsLayout 的页面都重复一次取数。
+ */
+const groups = groupByYear(await getPublishedPosts());
+---
+
+<div class="docs-sidebar">
+	{/*
+		窄屏：折叠块。刻意不用抽屉——抽屉需要 fixed 定位 + 焦点陷阱 + 滚动锁，
+		三样都得靠 JS，且是移动端 bug 的高发区。原生 <details> 零 JS 且自带
+		键盘与读屏支持。默认收起，免得长文章树把正文推到屏幕外。
+	*/}
+	<details class="docs-sidebar__disclosure lg:hidden">
+		<summary>浏览</summary>
+		<div class="docs-sidebar__body">
+			<nav aria-label="页面导航">
+				<NavLinks orientation="column" />
+			</nav>
+			<PostTree groups={groups} />
+			{
+				SOCIAL_LINKS.length > 0 && (
+					<ul class="docs-sidebar__social">
+						{SOCIAL_LINKS.map((link) => (
+							<li>
+								<a href={link.href} rel="me noopener" target="_blank">
+									{link.label}
+								</a>
+							</li>
+						))}
+					</ul>
+				)
+			}
+		</div>
+	</details>
+
+	{/* 宽屏：常驻侧栏。两份标记是为了免掉 JS——用 JS 切换同一份 DOM
+	    的展示方式会让「无 JS」这一档直接失去导航。 */}
+	{/* 只给 hidden，不给 lg:block：宽屏的 display 由下面 @media 里的
+	    display: flex 提供。写了 lg:block 反而会撒谎——Astro 的 <style>
+	    是无层级的，无层级规则无视优先级压过 @layer utilities，
+	    实际计算值永远是 flex，不是 block。 */}
+	<div class="docs-sidebar__panel hidden">
+		<nav aria-label="页面导航">
+			<NavLinks orientation="column" />
+		</nav>
+		<PostTree groups={groups} />
+		{
+			SOCIAL_LINKS.length > 0 && (
+				<ul class="docs-sidebar__social">
+					{SOCIAL_LINKS.map((link) => (
+						<li>
+							<a href={link.href} rel="me noopener" target="_blank">
+								{link.label}
+							</a>
+						</li>
+					))}
+				</ul>
+			)
+		}
+	</div>
+</div>
+
+<style>
+	.docs-sidebar__disclosure {
+		margin-bottom: 1.5rem;
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-radius: var(--r-md);
+	}
+	.docs-sidebar__disclosure > summary {
+		padding: 0.6rem 0.9rem;
+		color: var(--fg);
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.docs-sidebar__body {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+		padding: 0 0.9rem 0.9rem;
+	}
+
+	.docs-sidebar__social {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		font-size: 0.9rem;
+	}
+
+	@media (min-width: 64rem) {
+		.docs-sidebar {
+			/* align-self 必须是 start：默认的 stretch 会让侧栏和整行一样高，
+			   元素没有任何可移动的余量，sticky 就静默失效——表现为「不吸顶」，
+			   不报错，也不容易看出是哪条规则的问题。 */
+			align-self: start;
+			position: sticky;
+			top: calc(var(--header-h) + 1.5rem);
+			/* 文章树会比视口长，让它自己滚，而不是把整页拉长 */
+			max-height: calc(100vh - var(--header-h) - 3rem);
+			overflow-y: auto;
+			overscroll-behavior: contain;
+			padding-right: 0.5rem;
+		}
+		.docs-sidebar__panel {
+			display: flex;
+			flex-direction: column;
+			gap: 1.5rem;
+		}
+	}
+</style>

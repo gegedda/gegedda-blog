@@ -1,0 +1,47 @@
+---
+import { NAV_ITEMS } from '../consts';
+import NavLink from './NavLink.astro';
+
+/**
+ * 导航列表。方向由调用方决定。
+ *
+ * ⚠️ 这里**不能**写 `.nav-links--row .nav-link { ... }`。
+ * Astro 的作用域样式是按组件打的标记：`<ul>` 属于本组件，而 NavLink
+ * 渲染出来的 `<a>` 属于 NavLink 自己的作用域，两者的 data-astro-cid 不同，
+ * 后代选择器永远匹配不上——不报错，只是那些声明全部不生效。
+ * 所以字号走继承（设在 ul 上），其余样式留在 NavLink 内部。
+ *
+ * ul 的 margin/padding/list-style 不用写：Tailwind Preflight 已经清零了。
+ */
+interface Props {
+	orientation?: 'row' | 'column';
+}
+
+const { orientation = 'row' } = Astro.props;
+---
+
+<ul class:list={['nav-links', `nav-links--${orientation}`]}>
+	{
+		NAV_ITEMS.map((item) => (
+			<li>
+				<NavLink href={item.href}>{item.label}</NavLink>
+			</li>
+		))
+	}
+</ul>
+
+<style>
+	.nav-links {
+		display: flex;
+	}
+	.nav-links--row {
+		align-items: center;
+		gap: 1.25rem;
+		/* 字号靠继承传给 NavLink 里的 <a>，见文件顶部说明 */
+		font-size: 0.95rem;
+	}
+	.nav-links--column {
+		flex-direction: column;
+		gap: 0.1rem;
+	}
+</style>

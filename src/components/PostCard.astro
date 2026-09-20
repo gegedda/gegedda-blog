@@ -1,0 +1,95 @@
+---
+import { Image } from 'astro:assets';
+import { postUrl, type Post } from '../utils/posts';
+import FormattedDate from './FormattedDate.astro';
+
+interface Props {
+	post: Post;
+	/** 首篇大图。只由 PostList 在「列表第 1 页的第 1 篇」时置 true */
+	featured?: boolean;
+}
+
+const { post, featured = false } = Astro.props;
+const { title, description, pubDate, heroImage } = post.data;
+---
+
+<article class:list={['post-card', featured && 'post-card--featured']}>
+	<a class="post-card__link" href={postUrl(post)}>
+		{
+			heroImage && (
+				<Image
+					class="post-card__image"
+					src={heroImage}
+					alt=""
+					width={featured ? 1200 : 720}
+					height={featured ? 600 : 360}
+					loading={featured ? 'eager' : 'lazy'}
+					fetchpriority={featured ? 'high' : 'auto'}
+				/>
+			)
+		}
+		<h2 class="post-card__title">{title}</h2>
+		<p class="post-card__desc">{description}</p>
+		<p class="post-card__date">
+			<FormattedDate date={pubDate} />
+		</p>
+	</a>
+</article>
+
+<style>
+	.post-card__link {
+		display: block;
+		text-decoration: none;
+	}
+	.post-card__image {
+		display: block;
+		width: 100%;
+		height: auto;
+		margin-bottom: 0.75rem;
+		border-radius: var(--r-lg);
+		transition: box-shadow var(--dur-base) var(--ease);
+	}
+	.post-card__link:hover .post-card__image {
+		box-shadow: var(--box-shadow);
+	}
+
+	.post-card__title {
+		margin: 0 0 0.35rem;
+		color: var(--fg);
+		/* 卡片标题固定字号：它是列表项，不该跟着正文标题比例走 */
+		font-size: 1.15rem;
+		line-height: 1.4;
+		transition: color var(--dur-fast) var(--ease);
+	}
+	.post-card__desc {
+		margin: 0 0 0.5rem;
+		color: var(--fg-muted);
+		font-size: 0.9rem;
+		line-height: 1.6;
+		/* 摘要截到三行，否则几张卡片的高度会差出一大截 */
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+	.post-card__date {
+		margin: 0;
+		color: var(--fg-subtle);
+		font-size: 0.85rem;
+	}
+	.post-card__link:hover .post-card__title {
+		color: var(--accent);
+	}
+
+	.post-card--featured {
+		text-align: center;
+	}
+	.post-card--featured .post-card__title {
+		font-size: 1.6rem;
+		line-height: 1.35;
+	}
+	.post-card--featured .post-card__desc {
+		max-width: 34em;
+		margin-inline: auto;
+	}
+</style>

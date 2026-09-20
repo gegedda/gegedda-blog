@@ -11,6 +11,8 @@ interface Props {
 	description?: string;
 	image?: ImageMetadata;
 	ogType?: 'website' | 'article';
+	/** 404 这类页面用：不进索引 */
+	noindex?: boolean;
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
@@ -20,6 +22,7 @@ const {
 	description = SITE_DESCRIPTION,
 	image = FallbackImage,
 	ogType = 'website',
+	noindex = false,
 } = Astro.props;
 
 // 站点名统一在这里拼，页面只传自己的标题。
@@ -47,6 +50,7 @@ const ogImageURL = new URL(image.src, Astro.url);
 <!-- Primary Meta Tags -->
 <title>{fullTitle}</title>
 <meta name="description" content={description} />
+{noindex && <meta name="robots" content="noindex" />}
 
 <!-- Open Graph / Facebook -->
 <meta property="og:type" content={ogType} />

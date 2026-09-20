@@ -1,0 +1,40 @@
+---
+/**
+ * 导航链接。当前页用 aria-current="page" 标记，样式跟着这个属性走。
+ *
+ * 旧实现（HeaderLink）自己算了一个 .active 类，同时 Header 的样式里
+ * 又有一条 nav a.active —— 两套高亮机制各管一半，改一处另一处不动。
+ * 现在只有 aria-current 一个来源，且它同时是给读屏软件的语义。
+ */
+interface Props {
+	href: string;
+}
+
+const { href } = Astro.props;
+
+const pathname = Astro.url.pathname;
+// 统一补上尾斜杠再比较：构建产物是 /about/，但直接访问 /about 时
+// pathname 是 /about，不归一化会让这一条在两种写法下表现不同。
+const normalized = pathname.endsWith('/') ? pathname : `${pathname}/`;
+const isActive = href === '/' ? normalized === '/' : normalized.startsWith(href);
+---
+
+<a href={href} aria-current={isActive ? 'page' : undefined} class="nav-link">
+	<slot />
+</a>
+
+<style>
+	.nav-link {
+		display: block;
+		color: var(--fg-muted);
+		text-decoration: none;
+		transition: color var(--dur-fast) var(--ease);
+	}
+	.nav-link:hover {
+		color: var(--fg);
+	}
+	.nav-link[aria-current='page'] {
+		color: var(--accent);
+		font-weight: 700;
+	}
+</style>

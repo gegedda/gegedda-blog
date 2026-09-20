@@ -1,0 +1,118 @@
+---
+import Icon from './Icon.astro';
+
+/**
+ * 三态主题切换：亮 / 暗 / 跟随系统。
+ *
+ * 为什么是三态而不是一个开关：CSS 那边（light-dark() + prefers-color-scheme）
+ * 本来就分「显式选择」和「跟随系统」两种情况，如果 UI 只能表达两态，
+ * 用户一旦点过按钮就再也回不到「跟随系统」了。
+ *
+ * 为什么不用 dark: 工具类：dark: 变体依赖 [data-theme='dark']，
+ * 而该属性只由脚本写入 —— 无 JS 的用户永远拿不到。主题靠令牌切换。
+ */
+const OPTIONS = [
+	{ value: 'light', label: '亮色', icon: 'sun' },
+	{ value: 'dark', label: '暗色', icon: 'moon' },
+	{ value: 'system', label: '跟随系统', icon: 'monitor' },
+] as const;
+---
+
+<div class="theme-toggle" data-theme-toggle role="group" aria-label="主题">
+	{
+		OPTIONS.map((option) => (
+			<button type="button" data-theme-value={option.value} aria-pressed="false" title={option.label}>
+				<Icon name={option.icon} />
+				<span class="sr-only">{option.label}</span>
+			</button>
+		))
+	}
+</div>
+
+<style>
+	.theme-toggle {
+		display: inline-flex;
+		gap: 2px;
+		padding: 2px;
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-radius: var(--r-md);
+	}
+	.theme-toggle button {
+		display: grid;
+		place-items: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		padding: 0;
+		color: var(--fg-subtle);
+		background: none;
+		border: none;
+		border-radius: var(--r-sm);
+		cursor: pointer;
+		transition:
+			color var(--dur-fast) var(--ease),
+			background-color var(--dur-fast) var(--ease);
+	}
+	.theme-toggle button:hover {
+		color: var(--fg);
+	}
+	/* aria-pressed 是唯一的选中态来源，样式跟着它走，
+	   不再另开一个 .active 类——两套高亮机制正是旧 HeaderLink 的病根 */
+	.theme-toggle button[aria-pressed='true'] {
+		color: var(--fg);
+		background-color: var(--bg);
+		box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+	}
+	.theme-toggle :global(.icon) {
+		width: 1rem;
+		height: 1rem;
+	}
+</style>
+
+<script is:inline>
+	(() => {
+		const KEY = 'theme';
+		const root = document.documentElement;
+		const buttons = document.querySelectorAll('[data-theme-toggle] button');
+		if (!buttons.length) return;
+
+		const read = () => {
+			try {
+				return localStorage.getItem(KEY);
+			} catch {
+				// 隐私模式下 localStorage 会抛异常，静默降级成「跟随系统」
+				return null;
+			}
+		};
+
+		const apply = (value) => {
+			if (value === 'light' || value === 'dark') {
+				root.setAttribute('data-theme', value);
+			} else {
+				// 不写属性，交给 CSS 的 @media (prefers-color-scheme: dark)
+				root.removeAttribute('data-theme');
+			}
+			for (const button of buttons) {
+				button.setAttribute(
+					'aria-pressed',
+					String(button.dataset.themeValue === (value ?? 'system')),
+				);
+			}
+		};
+
+		for (const button of buttons) {
+			button.addEventListener('click', () => {
+				const value = button.dataset.themeValue;
+				try {
+					if (value === 'system') localStorage.removeItem(KEY);
+					else localStorage.setItem(KEY, value);
+				} catch {
+					/* 存不下就算了，本次会话内仍然生效 */
+				}
+				apply(value);
+			});
+		}
+
+		apply(read() ?? 'system');
+	})();
+</script>

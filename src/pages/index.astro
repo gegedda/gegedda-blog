@@ -1,156 +1,42 @@
 ---
-import { Image } from 'astro:assets';
-import BaseHead from '../components/BaseHead.astro';
-import Footer from '../components/Footer.astro';
-import FormattedDate from '../components/FormattedDate.astro';
-import Header from '../components/Header.astro';
+import PostList from '../components/PostList.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
-import { getPublishedPosts, postUrl } from '../utils/posts';
+import DocsLayout from '../layouts/DocsLayout.astro';
+import { getPublishedPosts } from '../utils/posts';
 
+// 首页就是文章列表，不再单独做一个 hero 落地页：
+// 多一层「首页 → 全部文章」对写作者和读者都是纯开销。
+// 分页在阶段 4 接进来（paginate() 会接管这个路由）。
 const posts = await getPublishedPosts();
-const recentPosts = posts.slice(0, 3);
+
+// 传 SITE_TITLE 作为标题：BaseHead 判断到 title === SITE_TITLE 就不再拼后缀，
+// 首页标题因此是「gegedda」而不是「gegedda · gegedda」。
 ---
 
-<!doctype html>
-<html lang="zh-CN">
-	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
-		<style>
-			main {
-				width: 960px;
-			}
-			.hero {
-				padding: 2.5em 0 1.5em;
-				text-align: center;
-			}
-			.hero h1 {
-				margin: 0 0 0.4em;
-				font-size: 2.6rem;
-				line-height: 1.2;
-			}
-			.hero p {
-				margin: 0 auto;
-				max-width: 560px;
-				color: rgb(var(--gray));
-			}
-			.latest {
-				font-size: 0.95rem;
-				color: rgb(var(--gray));
-				margin: 1.5em 0 0.8em;
-				text-transform: none;
-			}
-			ul {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 2rem;
-				list-style-type: none;
-				margin: 0;
-				padding: 0;
-			}
-			ul li {
-				width: calc(50% - 1rem);
-			}
-			ul li * {
-				text-decoration: none;
-				transition: 0.2s ease;
-			}
-			ul li:first-child {
-				width: 100%;
-				margin-bottom: 1rem;
-				text-align: center;
-			}
-			ul li:first-child img {
-				width: 100%;
-			}
-			ul li:first-child .title {
-				font-size: 2.369rem;
-			}
-			ul li img {
-				margin-bottom: 0.5rem;
-				border-radius: 12px;
-			}
-			ul li a {
-				display: block;
-			}
-			.title {
-				margin: 0;
-				/* 卡片标题从 h4 提到 h2（不再跳级），字号显式写回 h4 的值以免视觉变化 */
-				font-size: 1.563em;
-				color: rgb(var(--black));
-				line-height: 1.3;
-			}
-			.date {
-				margin: 0;
-				color: rgb(var(--gray));
-			}
-			ul li a:hover .title,
-			ul li a:hover .date {
-				color: var(--accent);
-			}
-			ul a:hover img {
-				box-shadow: var(--box-shadow);
-			}
-			.more {
-				display: block;
-				margin: 2em auto 0;
-				text-align: center;
-				color: var(--accent);
-				font-weight: 600;
-			}
-			@media (max-width: 720px) {
-				.hero h1 {
-					font-size: 1.9rem;
-				}
-				ul {
-					gap: 0.5em;
-				}
-				ul li {
-					width: 100%;
-					text-align: center;
-				}
-				ul li:first-child {
-					margin-bottom: 0;
-				}
-				ul li:first-child .title {
-					font-size: 1.563em;
-				}
-			}
-		</style>
-	</head>
-	<body>
-		<Header />
-		<main>
-			<section class="hero">
-				<h1>{SITE_TITLE}</h1>
-				<p>{SITE_DESCRIPTION}</p>
-			</section>
-			<section>
-				<p class="latest">最新文章</p>
-				<ul>
-					{
-						recentPosts.map((post) => (
-							<li>
-								<a href={postUrl(post)}>
-									{post.data.heroImage && (
-										<Image
-											width={720}
-											height={360}
-											src={post.data.heroImage}
-											alt={post.data.title}
-										/>
-									)}
-									<h2 class="title">{post.data.title}</h2>
-									<p class="date">
-										<FormattedDate date={post.data.pubDate} />
-									</p>
-								</a>
-							</li>
-						))
-					}
-				</ul>
-				<a class="more" href="/blog/">查看全部文章 →</a>
-			</section>
-		</main>
-		<Footer />
-	</body>
-</html>
+<DocsLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+	<header class="home-header">
+		<h1 class="home-header__title">{SITE_TITLE}</h1>
+		<p class="home-header__desc">{SITE_DESCRIPTION}</p>
+	</header>
+
+	<PostList posts={posts} featuredFirst />
+</DocsLayout>
+
+<style>
+	.home-header {
+		margin-bottom: 2.5rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.home-header__title {
+		margin: 0 0 0.4rem;
+		font-size: 1.9rem;
+		line-height: 1.3;
+	}
+	.home-header__desc {
+		margin: 0;
+		color: var(--fg-muted);
+		/* 导语限制到 30em，否则在宽屏上会拉成一整行很长的中文 */
+		max-width: 30em;
+	}
+</style>

@@ -1,0 +1,44 @@
+---
+import { readingStats } from '../utils/posts';
+import Icon from './Icon.astro';
+
+interface Props {
+	/** Markdown 原文，即 CollectionEntry.body */
+	body?: string;
+}
+
+const { body } = Astro.props;
+const { words, minutes } = readingStats(body);
+---
+
+{
+	words > 0 && (
+		<span class="reading-time">
+			<Icon name="words" />
+			{/* toLocaleString 让四位以上的数字有千位分隔（1,234 字） */}
+			<span>{words.toLocaleString('zh-CN')} 字</span>
+			<span class="reading-time__sep" aria-hidden="true">
+				·
+			</span>
+			<span>约 {minutes} 分钟</span>
+		</span>
+	)
+}
+
+<style>
+	.reading-time {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--fg-subtle);
+		font-size: 0.9rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.reading-time__sep {
+		color: var(--border-strong);
+	}
+	.reading-time :global(.icon) {
+		width: 0.95em;
+		height: 0.95em;
+	}
+</style>

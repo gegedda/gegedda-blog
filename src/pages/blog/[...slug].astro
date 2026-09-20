@@ -1,22 +1,29 @@
 ---
-import { type CollectionEntry, render } from 'astro:content';
-import BlogPost from '../../layouts/BlogPost.astro';
-import { getPublishedPosts } from '../../utils/posts';
+import { render, type CollectionEntry } from 'astro:content';
+import PostLayout from '../../layouts/PostLayout.astro';
+import { getPublishedPosts, postNeighbours } from '../../utils/posts';
 
 export async function getStaticPaths() {
 	// 必须在这里过滤草稿：只过滤列表页的话，知道 URL 的人（和爬虫）仍能直接打开草稿。
 	const posts = await getPublishedPosts();
 	return posts.map((post) => ({
+		// 保留 rest 参数形式（[...slug]）：post.id 来自 glob() 加载器，
+		// 会带目录前缀（2026/foo.md → id "2026/foo"），单段 [slug] 匹配不到。
 		params: { slug: post.id },
-		props: post,
+		props: { post, ...postNeighbours(posts, post.id) },
 	}));
 }
-type Props = CollectionEntry<'blog'>;
 
-const post = Astro.props;
-const { Content } = await render(post);
+interface Props {
+	post: CollectionEntry<'blog'>;
+	older?: CollectionEntry<'blog'>;
+	newer?: CollectionEntry<'blog'>;
+}
+
+const { post, older, newer } = Astro.props;
+const { Content, headings } = await render(post);
 ---
 
-<BlogPost {...post.data}>
+<PostLayout post={post} headings={headings} older={older} newer={newer}>
 	<Content />
-</BlogPost>
+</PostLayout>

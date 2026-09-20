@@ -1,0 +1,52 @@
+---
+import type { Post } from '../utils/posts';
+import PostCard from './PostCard.astro';
+
+/**
+ * 杂志式列表：首篇占满整行做推荐位，其余两列网格。
+ *
+ * 网格项是本组件自己的 <div>，而不是把网格样式打在 PostCard 的根元素上。
+ * Astro 的作用域样式按组件打标记，父组件选择器匹配不到子组件渲染出来的
+ * 元素——所以「父组件管布局、子组件管自身外观」是这里唯一可靠的分工。
+ */
+interface Props {
+	posts: Post[];
+	/** 首篇大图。只在列表**第 1 页**开启：第 2 页的第一篇只是第 11 新的文章。 */
+	featuredFirst?: boolean;
+}
+
+const { posts, featuredFirst = false } = Astro.props;
+---
+
+<div class="post-list">
+	{
+		posts.map((post, index) => {
+			const featured = featuredFirst && index === 0;
+			return (
+				<div class:list={['post-list__item', featured && 'post-list__item--wide']}>
+					<PostCard post={post} featured={featured} />
+				</div>
+			);
+		})
+	}
+</div>
+
+<style>
+	.post-list {
+		display: grid;
+		/* minmax(0, 1fr) 而不是 1fr：1fr 的最小值是 auto，
+		   卡片里一个长 URL 或长单词就能把整列撑破 */
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 2rem 1.75rem;
+	}
+	.post-list__item--wide {
+		grid-column: 1 / -1;
+		margin-bottom: 0.5rem;
+	}
+	@media (max-width: 48rem) {
+		.post-list {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 1.75rem;
+		}
+	}
+</style>

@@ -1,0 +1,79 @@
+---
+import { buildTocTree, type Heading } from '../utils/toc';
+
+/**
+ * 右栏目录。刻意做成纯静态锚点列表，**不做 scroll-spy**。
+ *
+ * scroll-spy 需要每页都跑 JS、会和 scroll-behavior: smooth 抢滚动位置，
+ * 而且中文标题的高度随行数变化，IntersectionObserver 的触发时机很脆——
+ * 换来的是「目录里高亮当前小节」这一条收益，不值。
+ *
+ * 锚点定位的偏移由 global.css 里的 scroll-padding-top / scroll-margin-top
+ * 统一处理，不在这里各写一遍。
+ */
+interface Props {
+	headings: Heading[];
+}
+
+const { headings } = Astro.props;
+const tree = buildTocTree(headings);
+---
+
+{
+	tree.length > 0 && (
+		<nav class="toc" aria-label="本页目录">
+			<div class="toc__title">本页目录</div>
+			<ul class="toc__list">
+				{tree.map((item) => (
+					<li>
+						<a href={`#${item.slug}`}>{item.text}</a>
+						{item.children.length > 0 && (
+							<ul class="toc__sublist">
+								{item.children.map((child) => (
+									<li>
+										<a href={`#${child.slug}`}>{child.text}</a>
+									</li>
+								))}
+							</ul>
+						)}
+					</li>
+				))}
+			</ul>
+		</nav>
+	)
+}
+
+<style>
+	.toc {
+		font-size: 0.85rem;
+	}
+	.toc__title {
+		margin-bottom: 0.6rem;
+		color: var(--fg-subtle);
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+	}
+	.toc__list,
+	.toc__sublist {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+	.toc__sublist {
+		/* 用内侧竖线表示层级，比缩进更省横向空间（只有 240px） */
+		margin-top: 0.2rem;
+		padding-left: 0.7rem;
+		border-left: 1px solid var(--border);
+	}
+	.toc a {
+		display: block;
+		color: var(--fg-muted);
+		line-height: 1.5;
+		text-decoration: none;
+		transition: color var(--dur-fast) var(--ease);
+	}
+	.toc a:hover {
+		color: var(--accent);
+	}
+</style>

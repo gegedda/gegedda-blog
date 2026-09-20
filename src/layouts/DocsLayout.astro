@@ -1,0 +1,90 @@
+---
+import Footer from '../components/Footer.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteSidebar from '../components/SiteSidebar.astro';
+import BaseLayout from './BaseLayout.astro';
+
+/**
+ * 文档式外壳：页头 + 左栏 + 正文（+ 可选的右栏目录）。
+ *
+ * 右栏靠 **探测具名插槽** 决定要不要渲染，而不是靠一个 `showRail` 参数：
+ * 页面拿不到一个自己没填内容的侧栏，也就不可能出现「右栏是空的但占了 240px」。
+ *
+ * 侧栏的文章树在这里由 SiteSidebar 自己取，7 个页面不必各写一遍。
+ */
+interface Props {
+	title: string;
+	description?: string;
+	ogType?: 'website' | 'article';
+}
+
+const { title, description, ogType } = Astro.props;
+const hasRail = Astro.slots.has('rail');
+---
+
+<BaseLayout title={title} description={description} ogType={ogType}>
+	<SiteHeader />
+	<div class:list={['docs-shell', hasRail && 'docs-shell--with-rail']}>
+		<SiteSidebar />
+		<main id="main" class="docs-main">
+			<slot />
+			<Footer />
+		</main>
+		{
+			hasRail && (
+				<aside class="docs-rail">
+					<slot name="rail" />
+				</aside>
+			)
+		}
+	</div>
+</BaseLayout>
+
+<style>
+	.docs-shell {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 2rem;
+		max-width: 110rem;
+		margin-inline: auto;
+		padding: 2rem 1rem 0;
+	}
+
+	.docs-main {
+		/* 没有它，一个宽代码块或长表格会把整个网格列撑破：
+		   grid 项的默认 min-width 是 auto，不会小于内容宽度 */
+		min-width: 0;
+	}
+
+	.docs-rail {
+		display: none;
+	}
+
+	/* 64rem = Tailwind lg。断点是算过的，不是随手取的：
+	   64rem 时内容列约 640px ≈ 37 汉字，勉强可读；
+	   768px 时只剩 376px ≈ 22 汉字，已经不可读了。
+	   所以侧栏不能在 1024px 之前出现。 */
+	@media (min-width: 64rem) {
+		.docs-shell {
+			grid-template-columns: 18rem minmax(0, 1fr);
+			gap: 2.5rem 3rem;
+			padding-inline: 1.5rem;
+		}
+	}
+
+	/* 80rem 才加右栏：再窄一点，正文会被压到 35 汉字以下 */
+	@media (min-width: 80rem) {
+		.docs-shell--with-rail {
+			grid-template-columns: 18rem minmax(0, 1fr) 15rem;
+		}
+		.docs-shell--with-rail .docs-rail {
+			display: block;
+			align-self: start;
+			position: sticky;
+			top: calc(var(--header-h) + 1.5rem);
+			max-height: calc(100vh - var(--header-h) - 3rem);
+			overflow-y: auto;
+			overscroll-behavior: contain;
+		}
+	}
+</style>

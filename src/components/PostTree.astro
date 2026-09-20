@@ -1,0 +1,80 @@
+---
+import { postUrl, type YearGroup } from '../utils/posts';
+
+/**
+ * 左栏的文章树，按年分组。
+ *
+ * 年份用 <ul aria-label> 而不是 <h2>：这块标记在 DOM 里排在正文 <h1> 之前，
+ * 放标题会让文档大纲从 h2 开始、h1 反而出现在后面。用 aria-label 朗读效果
+ * 一样（「2026 年，列表，2 项」），但不参与大纲。
+ */
+interface Props {
+	groups: YearGroup[];
+}
+
+const { groups } = Astro.props;
+
+const pathname = Astro.url.pathname;
+const current = pathname.endsWith('/') ? pathname : `${pathname}/`;
+---
+
+<nav class="tree" aria-label="全部文章">
+	{
+		groups.map((group) => (
+			<div class="tree__group">
+				<div class="tree__year" aria-hidden="true">
+					{group.year}
+				</div>
+				<ul class="tree__list" aria-label={`${group.year} 年`}>
+					{group.posts.map((post) => {
+						const href = postUrl(post);
+						return (
+							<li>
+								<a
+									href={href}
+									class="tree__link"
+									aria-current={current === href ? 'page' : undefined}
+								>
+									{post.data.title}
+								</a>
+							</li>
+						);
+					})}
+				</ul>
+			</div>
+		))
+	}
+</nav>
+
+<style>
+	.tree {
+		display: flex;
+		flex-direction: column;
+		gap: 1.25rem;
+	}
+	.tree__year {
+		margin-bottom: 0.4rem;
+		color: var(--fg-subtle);
+		font-size: 0.75rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.08em;
+	}
+	.tree__link {
+		display: block;
+		padding: 0.25rem 0;
+		/* 长标题在 288px 的栏里必须能换行，否则会撑破布局 */
+		color: var(--fg-muted);
+		font-size: 0.9rem;
+		line-height: 1.5;
+		text-decoration: none;
+		transition: color var(--dur-fast) var(--ease);
+	}
+	.tree__link:hover {
+		color: var(--fg);
+	}
+	.tree__link[aria-current='page'] {
+		color: var(--accent);
+		font-weight: 700;
+	}
+</style>

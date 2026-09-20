@@ -62,6 +62,12 @@
 	--r-md: 6px; /* 按钮、导航 */
 	--r-lg: 10px; /* 卡片、图片、代码块 */
 
+	/* sticky 页头的真实高度。所有 scroll-padding-top、scroll-margin-top
+	   和侧栏的 top 都从这里推出来，改这一个值全站跟着走。
+	   ⚠️ 页头内部必须 nowrap，否则窄屏换行会让真实高度不等于它，
+	   锚点会整体偏移。 */
+	--header-h: 3.5rem;
+
 	--dur-fast: 120ms;
 	--dur-base: 200ms;
 	--dur-slow: 320ms;
@@ -139,6 +145,10 @@
 		   横向溢出交给 pre / table 自己 overflow-x: auto。 */
 		-webkit-text-size-adjust: 100%;
 		scroll-behavior: smooth;
+		/* 锚点跳转时给 sticky 页头让出高度，否则标题会被盖住。
+		   这里兜住所有锚点，.prose 里再给标题加一道 scroll-margin-top，
+		   两者取较大值生效，不冲突。 */
+		scroll-padding-top: calc(var(--header-h) + 1rem);
 
 		/* 中文断行禁则：不让标点落在行首行尾。几乎没博客会设，性价比最高的一行 */
 		line-break: strict;
@@ -253,14 +263,6 @@
 
 	::selection {
 		background: color-mix(in srgb, var(--accent) 22%, transparent);
-	}
-
-	/* 过渡：内容宽度。阶段 3 由布局接管，现在各页的内联样式仍在覆盖它 */
-	main {
-		width: 100%;
-		max-width: 42rem;
-		margin-inline: auto;
-		padding: 3em 1em;
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -388,6 +390,13 @@
 
 	.prose img {
 		margin: 1.5em 0;
+		border-radius: var(--r-lg);
+	}
+
+	/* 锚点跳转后标题不被 sticky 页头盖住。html 上的 scroll-padding-top
+	   已经兜了一层，这里再给正文标题加一道，两者取较大值，不打架。 */
+	.prose :is(h1, h2, h3, h4, h5, h6) {
+		scroll-margin-top: calc(var(--header-h) + 1.5rem);
 	}
 
 	/* ── Shiki 双主题 ──

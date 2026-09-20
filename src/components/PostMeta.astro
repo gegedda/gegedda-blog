@@ -1,0 +1,70 @@
+---
+import FormattedDate from './FormattedDate.astro';
+import Icon from './Icon.astro';
+import ReadingTime from './ReadingTime.astro';
+
+interface Props {
+	pubDate: Date;
+	updatedDate?: Date;
+	/** 传了就显示字数与阅读时长；卡片上通常不传 */
+	body?: string;
+}
+
+const { pubDate, updatedDate, body } = Astro.props;
+---
+
+<div class="post-meta">
+	<span class="post-meta__item">
+		<Icon name="calendar" />
+		<FormattedDate date={pubDate} />
+	</span>
+
+	{
+		body !== undefined && (
+			<>
+				<span class="post-meta__sep" aria-hidden="true">
+					·
+				</span>
+				<ReadingTime body={body} />
+			</>
+		)
+	}
+
+	{
+		updatedDate && (
+			<>
+				<span class="post-meta__sep" aria-hidden="true">
+					·
+				</span>
+				<span class="post-meta__item">
+					最后更新于 <FormattedDate date={updatedDate} />
+				</span>
+			</>
+		)
+	}
+</div>
+
+<style>
+	.post-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--fg-subtle);
+		font-size: 0.9rem;
+	}
+	.post-meta__item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+	}
+	.post-meta__sep {
+		color: var(--border-strong);
+	}
+	/* FormattedDate 内部的 <time> 也要跟着这个字号，
+	   所以字号设在 .post-meta 上靠继承，不在这里硬写 */
+	.post-meta :global(.icon) {
+		width: 0.95em;
+		height: 0.95em;
+	}
+</style>

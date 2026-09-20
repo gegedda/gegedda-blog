@@ -1,18 +1,64 @@
 ---
-import { SITE_TITLE } from '../consts';
-const today = new Date();
+import { SOCIAL_LINKS, SITE_REPO, SITE_TITLE } from '../consts';
+import Icon from './Icon.astro';
+
+// 构建时求值：页脚版权年份跟着构建时间走，静态站不需要每年改一次代码
+const year = new Date().getFullYear();
 ---
 
-<footer>
-	&copy; {today.getFullYear()} {SITE_TITLE}. 保留所有权利。
+<footer class="site-footer">
+	<p class="site-footer__copy">&copy; {year} {SITE_TITLE}</p>
+	<nav class="site-footer__links" aria-label="页脚">
+		<a href={SITE_REPO} rel="noopener" target="_blank">GitHub</a>
+		{/* 阶段 4 会把路由改名成 /feed.xml，届时这里一起改，避免中间态出现死链 */}
+		<a href="/rss.xml">
+			<Icon name="rss" />
+			RSS
+		</a>
+		{
+			SOCIAL_LINKS.map((link) => (
+				<a href={link.href} rel="me noopener" target="_blank">
+					{link.label}
+				</a>
+			))
+		}
+	</nav>
 </footer>
+
 <style>
-	footer {
-		padding: 2em 1em 6em 1em;
-		/* 渐变带去掉：它在 body 和 footer 上各画了一次（双重色带），
-		   在三栏布局里还会和 sticky 侧栏打架。 */
-		color: rgb(var(--gray));
-		text-align: center;
-		font-size: 0.9rem;
+	.site-footer {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		margin-top: 4rem;
+		padding: 1.5rem 0 3rem;
+		border-top: 1px solid var(--border);
+		color: var(--fg-subtle);
+		font-size: 0.85rem;
+	}
+	.site-footer__copy {
+		margin: 0;
+	}
+	.site-footer__links {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 1rem;
+	}
+	.site-footer__links a {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		color: var(--fg-subtle);
+		text-decoration: none;
+	}
+	.site-footer__links a:hover {
+		color: var(--accent);
+	}
+	.site-footer :global(.icon) {
+		width: 0.95em;
+		height: 0.95em;
 	}
 </style>

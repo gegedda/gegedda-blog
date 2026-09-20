@@ -1,0 +1,45 @@
+---
+import DocsLayout from './DocsLayout.astro';
+
+/**
+ * 静态页（关于 / 归档 / 标签）。与 PostLayout 的区别：
+ * 没有发布日期、没有目录、没有上下篇——这些栏目对一页「关于」没有意义，
+ * 旧 BlogPost 布局把 hero 槽位和居中标题一并塞给了 about 页，就是这个毛病。
+ */
+interface Props {
+	title: string;
+	description?: string;
+	/** 标题下的一句导语，可选 */
+	lead?: string;
+}
+
+const { title, description, lead } = Astro.props;
+---
+
+<DocsLayout title={title} description={description} ogType="website">
+	<header class="page-header">
+		<h1 class="page-header__title">{title}</h1>
+		{lead && <p class="page-header__lead">{lead}</p>}
+	</header>
+
+	<div class="prose">
+		<slot />
+	</div>
+</DocsLayout>
+
+<style>
+	.page-header {
+		margin-bottom: 2rem;
+		padding-bottom: 1.25rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.page-header__title {
+		margin: 0;
+		font-size: 1.9rem;
+		line-height: 1.3;
+	}
+	.page-header__lead {
+		margin: 0.75rem 0 0;
+		color: var(--fg-muted);
+	}
+</style>

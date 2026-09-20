@@ -1,0 +1,79 @@
+---
+import type { ImageMetadata } from 'astro';
+import BaseHead from '../components/BaseHead.astro';
+import { SITE_LANG } from '../consts';
+
+/**
+ * 最外层：<html> + <head> + 跳转链接。不带任何 chrome（没有页头、没有侧栏）。
+ * 404 页直接用它——给一个「找不到页面」配上完整侧栏，等于邀请读者离开。
+ *
+ * 需要页头与侧栏的页面用 DocsLayout。
+ */
+interface Props {
+	title: string;
+	description?: string;
+	image?: ImageMetadata;
+	ogType?: 'website' | 'article';
+	/** 404 这类页面用：不进索引 */
+	noindex?: boolean;
+}
+
+const { title, description, image, ogType, noindex = false } = Astro.props;
+---
+
+<!doctype html>
+<html lang={SITE_LANG}>
+	<head>
+		{/*
+			防闪烁：必须在任何绘制之前同步执行，所以是内联脚本而不是模块。
+			只在用户**显式选过**主题时写 data-theme；没选过就不写，
+			交给 CSS 的 @media (prefers-color-scheme: dark) 跟随系统。
+			这与 ThemeToggle 的 apply() 是同一套约定，改一处要改两处。
+		*/}
+		<script is:inline>
+			(() => {
+				try {
+					const theme = localStorage.getItem('theme');
+					if (theme === 'light' || theme === 'dark') {
+						document.documentElement.setAttribute('data-theme', theme);
+					}
+				} catch {
+					// 隐私模式下 localStorage 会抛异常，跟随系统即可
+				}
+			})();
+		</script>
+		<BaseHead
+			title={title}
+			description={description}
+			image={image}
+			ogType={ogType}
+			noindex={noindex}
+		/>
+	</head>
+	<body>
+		<a class="skip-link" href="#main">跳到正文</a>
+		<slot />
+	</body>
+</html>
+
+<style>
+	/* 键盘用户的第一个 Tab 停靠点。用 transform 移出视口而不是 display: none——
+	   后者会让它无法获得焦点。 */
+	.skip-link {
+		position: fixed;
+		top: 0.5rem;
+		left: 0.5rem;
+		z-index: 100;
+		padding: 0.55rem 1rem;
+		color: var(--fg);
+		background-color: var(--bg);
+		border: 1px solid var(--accent);
+		border-radius: var(--r-md);
+		font-size: 0.9rem;
+		text-decoration: none;
+		transform: translateY(-200%);
+	}
+	.skip-link:focus {
+		transform: translateY(0);
+	}
+</style>

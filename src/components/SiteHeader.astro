@@ -1,0 +1,65 @@
+---
+import { SITE_TITLE } from '../consts';
+import NavLinks from './NavLinks.astro';
+import ThemeToggle from './ThemeToggle.astro';
+---
+
+<header class="site-header">
+	<div class="site-header__inner">
+		<a class="site-header__name" href="/">{SITE_TITLE}</a>
+		<nav class="site-header__nav" aria-label="主导航">
+			<NavLinks orientation="row" />
+			<ThemeToggle />
+		</nav>
+	</div>
+</header>
+
+<style>
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		background-color: color-mix(in srgb, var(--bg) 88%, transparent);
+		border-bottom: 1px solid var(--border);
+		/* 毛玻璃。--bg 是不透明色，所以即使浏览器不支持 backdrop-filter，
+		   88% 的底色也足以盖住下面的正文。 */
+		backdrop-filter: blur(8px);
+	}
+
+	.site-header__inner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		max-width: 110rem;
+		height: var(--header-h);
+		margin-inline: auto;
+		padding-inline: 1rem;
+		/* 钉死高度：所有 scroll-margin-top / 侧栏 top 都依赖 --header-h，
+		   一旦导航换行导致真实高度变化，全站锚点会一起偏。
+		   nowrap + 横向滚动兜住最窄的情况（4 个双字标签 + 按钮 ≈ 310px）。 */
+		white-space: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.site-header__inner::-webkit-scrollbar {
+		display: none;
+	}
+
+	.site-header__name {
+		font-size: 1.05rem;
+		font-weight: 700;
+		color: var(--fg);
+		text-decoration: none;
+		letter-spacing: 0.01em;
+	}
+	.site-header__name:hover {
+		color: var(--accent);
+	}
+
+	.site-header__nav {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+</style>

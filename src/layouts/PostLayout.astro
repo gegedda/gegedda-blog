@@ -1,0 +1,81 @@
+---
+import { Image } from 'astro:assets';
+import PostMeta from '../components/PostMeta.astro';
+import PostNav from '../components/PostNav.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import TagChips from '../components/TagChips.astro';
+import type { Post } from '../utils/posts';
+import type { Heading } from '../utils/toc';
+import DocsLayout from './DocsLayout.astro';
+
+interface Props {
+	post: Post;
+	/** 来自 render(post) 的 headings，已由页面传进来 */
+	headings: Heading[];
+	older?: Post;
+	newer?: Post;
+}
+
+const { post, headings, older, newer } = Astro.props;
+const { title, description, pubDate, updatedDate, heroImage, tags } = post.data;
+---
+
+<DocsLayout title={title} description={description} ogType="article">
+	<article>
+		{
+			heroImage && (
+				<Image
+					class="post-hero"
+					src={heroImage}
+					alt=""
+					width={1200}
+					height={600}
+					loading="eager"
+					fetchpriority="high"
+				/>
+			)
+		}
+
+		<header class="post-header">
+			<h1 class="post-header__title">{title}</h1>
+			<PostMeta pubDate={pubDate} updatedDate={updatedDate} body={post.body} />
+			<TagChips tags={tags} />
+		</header>
+
+		<div class="prose">
+			<slot />
+		</div>
+
+		<PostNav older={older} newer={newer} />
+	</article>
+
+	<Fragment slot="rail">
+		<TableOfContents headings={headings} />
+	</Fragment>
+</DocsLayout>
+
+<style>
+	.post-hero {
+		display: block;
+		width: 100%;
+		height: auto;
+		margin-bottom: 2rem;
+		border-radius: var(--r-lg);
+	}
+
+	.post-header {
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		margin-bottom: 2.25rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.post-header__title {
+		margin: 0;
+		/* 文章标题比正文里的 h1 略大，但不走 3em 那套——中文标题在
+		   61px 下每个字都是一块墨，扫读时反而吃力 */
+		font-size: 1.9rem;
+		line-height: 1.3;
+	}
+</style>
