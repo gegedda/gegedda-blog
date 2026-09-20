@@ -4,18 +4,29 @@
 import '../styles/global.css';
 import type { ImageMetadata } from 'astro';
 import FallbackImage from '../assets/blog-placeholder-1.jpg';
-import { SITE_TITLE } from '../consts';
+import { SITE_DESCRIPTION, SITE_LOCALE, SITE_TITLE } from '../consts';
 import { Font } from 'astro:assets';
 
 interface Props {
 	title: string;
-	description: string;
+	description?: string;
 	image?: ImageMetadata;
+	ogType?: 'website' | 'article';
 }
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-const { title, description, image = FallbackImage } = Astro.props;
+const {
+	title,
+	description = SITE_DESCRIPTION,
+	image = FallbackImage,
+	ogType = 'website',
+} = Astro.props;
+
+// 站点名统一在这里拼，页面只传自己的标题。
+// 首页标题已经等于站点名，再拼一次会变成「gegedda · gegedda」。
+const fullTitle = title === SITE_TITLE ? title : `${title} · ${SITE_TITLE}`;
+const ogImageURL = new URL(image.src, Astro.url);
 ---
 
 <!-- Global Metadata -->
@@ -37,15 +48,20 @@ const { title, description, image = FallbackImage } = Astro.props;
 <link rel="canonical" href={canonicalURL} />
 
 <!-- Primary Meta Tags -->
-<title>{title}</title>
+<title>{fullTitle}</title>
 <meta name="description" content={description} />
 
 <!-- Open Graph / Facebook -->
-<meta property="og:type" content="website" />
+<meta property="og:type" content={ogType} />
+<meta property="og:site_name" content={SITE_TITLE} />
+<meta property="og:locale" content={SITE_LOCALE} />
 <meta property="og:url" content={Astro.url} />
-<meta property="og:title" content={title} />
+<meta property="og:title" content={fullTitle} />
 <meta property="og:description" content={description} />
-<meta property="og:image" content={new URL(image.src, Astro.url)} />
+<meta property="og:image" content={ogImageURL} />
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={fullTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImageURL} />

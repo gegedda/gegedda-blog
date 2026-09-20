@@ -9,6 +9,9 @@ const { date } = Astro.props;
 <time datetime={date.toISOString()}>
 	{
 		date.toLocaleDateString('zh-CN', {
+			// 显式指定时区：否则渲染结果取决于构建机的 TZ，
+			// `pubDate: '2026-09-20'` 在负时区会被显示成前一天。
+			timeZone: 'Asia/Shanghai',
 			year: 'numeric',
 			month: 'long',
 			day: 'numeric',

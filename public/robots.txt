@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# 站点地址变更时需同步更新（同时改 astro.config.mjs 的 site）
+Sitemap: https://gegedda-blog.pages.dev/sitemap-index.xml

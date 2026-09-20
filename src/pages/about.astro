@@ -1,22 +1,30 @@
 ---
 import Layout from '../layouts/BlogPost.astro';
-import { SITE_TITLE } from '../consts';
+import { SITE_REPO } from '../consts';
 ---
 
 <Layout
-	title={`关于 ${SITE_TITLE}`}
+	title="关于本站"
 	description="关于本站与作者"
-	pubDate={new Date('2026-09-20')}
+	ogType="website"
 >
-	<p>这里是本站的"关于"页面。请在这里介绍你自己：你是谁、为什么写博客、主要写什么方向的内容，以及如何联系你。</p>
+	<p>
+		这里记录我在技术学习中的笔记、踩过的坑，以及一些还没想清楚的想法。
+		写得慢，但尽量写自己真正用过、验证过的东西。
+	</p>
 
 	<h2>关于本站</h2>
 	<p>
-		本站基于 <a href="https://astro.build/" target="_blank">Astro</a> 构建，内容以 Markdown 写作，
-		通过 Git 管理，部署在 Cloudflare Pages。这是一个由零搭建的个人博客项目。
+		本站基于 <a href="https://astro.build/" target="_blank">Astro</a> 构建，构建产物不含任何 JavaScript，
+		内容以 Markdown 写作，通过 Git 管理，部署在 Cloudflare Pages。
+	</p>
+	<p>
+		源码公开在 <a href={SITE_REPO} target="_blank">GitHub</a>，
+		包括建站过程中的取舍记录。如果想看这个站是怎么从零搭起来的，可以从
+		<a href="/blog/building-this-blog/">《如何从零搭建这个博客》</a>开始。
 	</p>
 
-	<h2>写作方向（待补充）</h2>
+	<h2>写作方向</h2>
 	<ul>
 		<li>技术学习笔记</li>
 		<li>项目实践记录</li>
@@ -24,5 +32,8 @@ import { SITE_TITLE } from '../consts';
 	</ul>
 
 	<h2>联系我</h2>
-	<p>TODO：在此填写你的邮箱或社交账号。</p>
+	<p>
+		最可靠的方式是订阅 <a href="/rss.xml">RSS</a>——新文章发布后会第一时间同步过去。
+		纠错、提问或单纯想聊聊，欢迎到 <a href={SITE_REPO} target="_blank">GitHub 仓库</a>开 issue。
+	</p>
 </Layout>

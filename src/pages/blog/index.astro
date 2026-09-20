@@ -1,24 +1,27 @@
 ---
 import { Image } from 'astro:assets';
-import { getCollection } from 'astro:content';
 import BaseHead from '../../components/BaseHead.astro';
 import Footer from '../../components/Footer.astro';
 import FormattedDate from '../../components/FormattedDate.astro';
 import Header from '../../components/Header.astro';
-import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
+import { getPublishedPosts, postUrl } from '../../utils/posts';
 
-const posts = (await getCollection('blog')).sort(
-	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
-);
+const posts = await getPublishedPosts();
+const PAGE_TITLE = '全部文章';
 ---
 
 <!doctype html>
 <html lang="zh-CN">
 	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+		<BaseHead title={PAGE_TITLE} description="按时间倒序排列的全部文章。" />
 		<style>
 			main {
 				width: 960px;
+			}
+			.page-title {
+				margin: 0 0 1em;
+				font-size: 2rem;
+				line-height: 1.2;
 			}
 			ul {
 				display: flex;
@@ -55,6 +58,8 @@ const posts = (await getCollection('blog')).sort(
 			}
 			.title {
 				margin: 0;
+				/* 卡片标题从 h4 提到 h2（不再跳级），字号显式写回 h4 的值以免视觉变化 */
+				font-size: 1.563em;
 				color: rgb(var(--black));
 				line-height: 1;
 			}
@@ -62,7 +67,7 @@ const posts = (await getCollection('blog')).sort(
 				margin: 0;
 				color: rgb(var(--gray));
 			}
-			ul li a:hover h4,
+			ul li a:hover .title,
 			ul li a:hover .date {
 				color: rgb(var(--accent));
 			}
@@ -90,15 +95,21 @@ const posts = (await getCollection('blog')).sort(
 		<Header />
 		<main>
 			<section>
+				<h1 class="page-title">{PAGE_TITLE}</h1>
 				<ul>
 					{
 						posts.map((post) => (
 							<li>
-								<a href={`/blog/${post.id}/`}>
+								<a href={postUrl(post)}>
 									{post.data.heroImage && (
-										<Image width={720} height={360} src={post.data.heroImage} alt="" />
+										<Image
+											width={720}
+											height={360}
+											src={post.data.heroImage}
+											alt={post.data.title}
+										/>
 									)}
-									<h4 class="title">{post.data.title}</h4>
+									<h2 class="title">{post.data.title}</h2>
 									<p class="date">
 										<FormattedDate date={post.data.pubDate} />
 									</p>

@@ -5,7 +5,7 @@ import HeaderLink from './HeaderLink.astro';
 
 <header>
 	<nav>
-		<h2><a href="/">{SITE_TITLE}</a></h2>
+		<div class="site-name"><a href="/">{SITE_TITLE}</a></div>
 		<div class="internal-links">
 			<HeaderLink href="/">首页</HeaderLink>
 			<HeaderLink href="/blog">文章</HeaderLink>
@@ -21,13 +21,14 @@ import HeaderLink from './HeaderLink.astro';
 		background: white;
 		box-shadow: 0 2px 8px rgba(var(--black), 5%);
 	}
-	h2 {
+	/* 站名不是标题：它出现在每页 h1 之前，用标题标签会打乱文档大纲 */
+	.site-name {
 		margin: 0;
 		font-size: 1em;
 	}
 
-	h2 a,
-	h2 a.active {
+	.site-name a,
+	.site-name a.active {
 		text-decoration: none;
 	}
 	nav {
