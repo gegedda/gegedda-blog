@@ -1,9 +1,19 @@
 /*
-  The CSS in this style tag is based off of Bear Blog's default CSS.
-  https://github.com/HermanMartinus/bearblog/blob/297026a877bc2ab2b3bdfbd6b9f7961c350917dd/templates/styles/blog/default.css
-  License MIT: https://github.com/HermanMartinus/bearblog/blob/master/LICENSE.md
- */
+  样式入口。BaseHead.astro 引入本文件，因此全站都走这里。
 
+  ⚠️ 分层很重要：Tailwind v4 把工具类放进 @layer utilities，
+  而「未分层的 CSS 永远胜过已分层的 CSS，与选择器优先级无关」。
+  所以下面所有手写规则必须待在 @layer base 里，否则 body { font-size }
+  这类规则会把 text-sm、mb-8 之类的工具类静默压掉——不报错，只是不生效。
+*/
+@import "tailwindcss";
+
+/* 暗色变体：跟随 <html data-theme="dark">，而不是 prefers-color-scheme。
+   注意 data-theme 由一段内联脚本写入，因此无 JS 时它永远不存在——
+   这也意味着标记里不该写 dark: 工具类，暗色应通过 token 切换。 */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* 未分层：自定义属性的声明不参与和工具类的竞争，放外面最安全 */
 :root {
 	--accent: #2337ff;
 	--accent-dark: #000d8a;
@@ -16,126 +26,148 @@
 		0 2px 6px rgba(var(--gray), 25%), 0 8px 24px rgba(var(--gray), 33%),
 		0 16px 32px rgba(var(--gray), 33%);
 }
-body {
-	font-family: var(--font-atkinson);
-	margin: 0;
-	padding: 0;
-	text-align: left;
-	background: linear-gradient(var(--gray-gradient)) no-repeat;
-	background-size: 100% 600px;
-	word-wrap: break-word;
-	overflow-wrap: break-word;
-	color: rgb(var(--gray-dark));
-	font-size: 20px;
-	line-height: 1.7;
-}
-main {
-	width: 720px;
-	max-width: calc(100% - 2em);
-	margin: auto;
-	padding: 3em 1em;
-}
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-	margin: 0 0 0.5rem 0;
-	color: rgb(var(--black));
-	line-height: 1.2;
-}
-h1 {
-	font-size: 3.052em;
-}
-h2 {
-	font-size: 2.441em;
-}
-h3 {
-	font-size: 1.953em;
-}
-h4 {
-	font-size: 1.563em;
-}
-h5 {
-	font-size: 1.25em;
-}
-strong,
-b {
-	font-weight: 700;
-}
-a {
-	color: var(--accent);
-}
-a:hover {
-	color: var(--accent);
-}
-p {
-	margin-bottom: 1em;
-}
-.prose p {
-	margin-bottom: 2em;
-}
-textarea {
-	width: 100%;
-	font-size: 16px;
-}
-input {
-	font-size: 16px;
-}
-table {
-	width: 100%;
-}
-img {
-	max-width: 100%;
-	height: auto;
-	border-radius: 8px;
-}
-code {
-	padding: 2px 5px;
-	background-color: rgb(var(--gray-light));
-	border-radius: 2px;
-}
-pre {
-	padding: 1.5em;
-	border-radius: 8px;
-}
-pre > code {
-	all: unset;
-}
-blockquote {
-	border-left: 4px solid var(--accent);
-	padding: 0 0 0 20px;
-	margin: 0;
-	font-size: 1.333em;
-}
-hr {
-	border: none;
-	border-top: 1px solid rgb(var(--gray-light));
-}
-@media (max-width: 720px) {
+
+@layer base {
 	body {
-		font-size: 18px;
+		font-family: var(--font-atkinson);
+		margin: 0;
+		padding: 0;
+		text-align: left;
+		background: linear-gradient(var(--gray-gradient)) no-repeat;
+		background-size: 100% 600px;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+		color: rgb(var(--gray-dark));
+		font-size: 20px;
+		line-height: 1.7;
 	}
 	main {
-		padding: 1em;
+		width: 720px;
+		max-width: calc(100% - 2em);
+		margin: auto;
+		padding: 3em 1em;
 	}
-}
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		margin: 0 0 0.5rem 0;
+		color: rgb(var(--black));
+		line-height: 1.2;
+	}
+	h1 {
+		font-size: 3.052em;
+	}
+	h2 {
+		font-size: 2.441em;
+	}
+	h3 {
+		font-size: 1.953em;
+	}
+	h4 {
+		font-size: 1.563em;
+	}
+	h5 {
+		font-size: 1.25em;
+	}
+	strong,
+	b {
+		font-weight: 700;
+	}
+	a {
+		color: var(--accent);
+	}
+	p {
+		margin-bottom: 1em;
+	}
+	.prose p {
+		margin-bottom: 2em;
+	}
+	table {
+		width: 100%;
+	}
+	img {
+		max-width: 100%;
+		height: auto;
+		border-radius: 8px;
+	}
+	code {
+		padding: 2px 5px;
+		background-color: rgb(var(--gray-light));
+		border-radius: 2px;
+	}
+	pre {
+		padding: 1.5em;
+		border-radius: 8px;
+	}
+	pre > code {
+		all: unset;
+	}
+	blockquote {
+		border-left: 4px solid var(--accent);
+		padding: 0 0 0 20px;
+		margin: 0;
+		font-size: 1.333em;
+	}
+	hr {
+		border: none;
+		border-top: 1px solid rgb(var(--gray-light));
+	}
+	@media (max-width: 720px) {
+		body {
+			font-size: 18px;
+		}
+		main {
+			padding: 1em;
+		}
+	}
 
-.sr-only {
-	border: 0;
-	padding: 0;
-	margin: 0;
-	position: absolute !important;
-	height: 1px;
-	width: 1px;
-	overflow: hidden;
-	/* IE6, IE7 - a 0 height clip, off to the bottom right of the visible 1px box */
-	clip: rect(1px 1px 1px 1px);
-	/* maybe deprecated but we need to support legacy browsers */
-	clip: rect(1px, 1px, 1px, 1px);
-	/* modern browsers, clip-path works inwards from each corner */
-	clip-path: inset(50%);
-	/* added line to stop words getting smushed together (as they go onto separate lines and some screen readers do not understand line feeds as a space */
-	white-space: nowrap;
+	/*
+	  以下为 Preflight 补偿层。
+	  Preflight 会把所有元素的 margin/padding/border 归零、并给 ul/ol 去掉项目符号，
+	  目的是让工具类从白纸开始。已有的正文样式没有显式写这些值，所以要补回来——
+	  否则正文里的列表会变成没有符号也没有缩进的一坨。
+	  阶段 2 重写排版层时，这块会被正经的 .prose 规则取代。
+	*/
+	.prose ul {
+		list-style: disc;
+		padding-inline-start: 1.5em;
+		margin: 0 0 1em;
+	}
+	.prose ol {
+		list-style: decimal;
+		padding-inline-start: 1.5em;
+		margin: 0 0 1em;
+	}
+	.prose li > ul,
+	.prose li > ol {
+		margin-bottom: 0;
+	}
+	.prose li {
+		margin-bottom: 0.35em;
+	}
+	.prose pre {
+		margin: 0 0 1.5em;
+		overflow-x: auto;
+	}
+	.prose table {
+		display: block;
+		overflow-x: auto;
+		border-collapse: collapse;
+		margin: 0 0 1.5em;
+	}
+	.prose th,
+	.prose td {
+		border: 1px solid rgb(var(--gray-light));
+		padding: 0.5em 0.75em;
+		text-align: left;
+	}
+	.prose th {
+		background-color: rgb(var(--gray-light));
+	}
+	h6 {
+		font-size: 1em;
+	}
 }
