@@ -1,22 +1,46 @@
-import { getCollection, type CollectionEntry } from 'astro:content';
-
+import { listPublishedPosts } from '../data/posts.repo';
+import { getDb } from '../lib/db';
 import { tagSegment } from './tag-segment';
+import type { Post } from '../domain/post';
 
-export type Post = CollectionEntry<'blog'>;
+export type { Post, PostData, PostHeading } from '../domain/post';
 
 /**
  * 按发布时间倒序返回可公开的文章。
  *
- * 所有需要文章列表的地方都应该走这里，不要在页面里直接调 getCollection——
- * 否则很容易漏掉 draft 过滤（草稿会同时出现在首页、列表页、详情页和 RSS 里）。
+ * 全站**只有这一个函数**碰数据源。它以前调 `getCollection`（Astro 内容集合），
+ * 现在调仓储层读 D1。签名一个字没变，所以 7 个调用点、18 个组件都不用改——
+ * 这次改造的爆炸半径就是这么被限制在一个文件里的。
  *
- * 生产构建剔除 draft: true；本地 dev 保留，方便预览未完成的文章。
+ * 两处行为变化，都是刻意的：
+ *
+ * 1. **草稿在本地 dev 也不再出现了。** 以前是 `import.meta.env.PROD ? !draft : true`，
+ *    本地能看到未完成的文章。`import.meta.env.PROD` 是构建期常量，在 SSR 下
+ *    它反映的是构建时而非请求时，继续用会得到"本地 dev 看得见草稿、线上也看得见"
+ *    或者反过来的错乱。草稿预览改由 `/admin` 提供（P5）。
+ *
+ * 2. **同一天的两篇文章顺序反了。** 以前只按 pubDate 排序、没有兜底键，
+ *    顺序取决于加载器的迭代顺序；现在和数据库索引一致，是
+ *    `pub_date_utc DESC, slug DESC`。现有两篇都是 2026-09-20，所以
+ *    `hello-world` 排到了 `building-this-blog` 前面。
+ *    这个兜底键不是风格问题：分页用 LIMIT/OFFSET 时，没有全序会让同一篇
+ *    在第 1 页和第 2 页都出现、或者从两页里都消失。
+ *
+ * 排序现在由 SQL 保证，所以这里不再 return 一个 sort 后的副本。
+ *
+ * ⚠️ **`body` 和 `bodyHtml` 是空的。** 这个函数走的是列表列清单
+ * （`POST_LIST_COLUMNS`），只有标题、日期、标签这些卡片要用的字段——
+ * 全站每页都要跑侧栏，把它换成全列等于每页都拖一遍所有正文。
+ *
+ * 所以：**要正文的地方不能用它**。RSS 走
+ * `listPublishedPostsWithContent`，后台编辑器走 `getPostBySlugForAdmin`，
+ * 详情页走 `getPublishedPostBySlug`。
+ *
+ * 这个警告不是多余的——已经踩过一次：RSS 曾经用它取数，于是每篇都输出
+ * `<content:encoded/>`，文件合法、订阅器里却是空的，而且不报错。
  */
 export async function getPublishedPosts(): Promise<Post[]> {
-	const posts = await getCollection('blog', ({ data }) =>
-		import.meta.env.PROD ? !data.draft : true,
-	);
-	return posts.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+	return listPublishedPosts(getDb());
 }
 
 /** 文章详情页路径。改路由时只需要改这一处。 */
@@ -195,13 +219,6 @@ export function collectTags(posts: Post[]): TagCount[] {
 		.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'zh-CN'));
 }
 
-export interface ReadingStats {
-	/** 汉字 + 西文单词总数 */
-	words: number;
-	/** 预计阅读分钟数，最少 1 */
-	minutes: number;
-}
-
 /**
  * href 用：编码后的 URL 片段。中文标签变成 %E5%89%8D%E7%AB%AF 这样的转义序列。
  *
@@ -230,29 +247,12 @@ export function tagUrl(tag: string): string {
 	return `/tags/${tagSlug(tag)}/`;
 }
 
-const CJK = /[㐀-䶿一-鿿豈-﫿]/g;
-
 /**
- * 字数与阅读时长。
+ * `readingStats` 已挪到 ./reading，因为那个模块要同时被非 Astro 环境使用
+ * （scripts/content-to-sql.mjs 在导入文章时要把字数写进 D1 的 words/minutes 缓存列），
+ * 而本文件要 import astro:content，在浏览器和 Node 脚本里都加载不了。
  *
- * 中文按「字」计、西文按「词」计，两者数量级接近，直接相加即可。
- * 代码块整段剔除：读代码的时间不该算进「读这篇文章要多久」。
+ * 在这里 re-export 是为了保住现有调用点的 import 路径：
+ * src/components/ReadingTime.astro 与 test/posts.test.ts 都不用改。
  */
-export function readingStats(body: string | undefined): ReadingStats {
-	if (!body) return { words: 0, minutes: 1 };
-
-	const text = body
-		.replace(/```[\s\S]*?```/g, '') // 围栏代码块
-		.replace(/~~~[\s\S]*?~~~/g, '')
-		.replace(/`[^`\n]*`/g, '') // 行内码
-		.replace(/!?\[[^\]]*\]\([^)]*\)/g, '') // 链接与图片
-		.replace(/^\s{0,3}#{1,6}\s+/gm, '') // 标题标记
-		.replace(/[#>*_~|]/g, ' ');
-
-	const cjk = (text.match(CJK) ?? []).length;
-	const latin = (text.replace(CJK, ' ').match(/[A-Za-z0-9]+/g) ?? []).length;
-	const words = cjk + latin;
-
-	// 中文阅读速度约 400 字/分钟
-	return { words, minutes: Math.max(1, Math.round(words / 400)) };
-}
+export { readingStats, type ReadingStats } from './reading';
