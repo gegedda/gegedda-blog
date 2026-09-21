@@ -1,49 +1,94 @@
 ---
-import type { GetStaticPaths } from 'astro';
+import NotFound from '../components/NotFound.astro';
 import Pagination from '../components/Pagination.astro';
 import PostList from '../components/PostList.astro';
 import { PAGE_SIZE, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { countPublishedPosts, listPublishedPosts } from '../data/posts.repo';
+import { buildPage, parsePageParam } from '../domain/pagination';
 import DocsLayout from '../layouts/DocsLayout.astro';
-import { getPublishedPosts } from '../utils/posts';
+import { getDb } from '../lib/db';
 
 /**
  * 首页 = 分页列表，第 1 页在 `/`，第 2 页起在 `/2/`、`/3/`…
  *
- * 文件名**必须**是 `[...page].astro`，两个原因，都踩过：
- *  1. paginate() 把参数名硬编码为 `page`（不是 route 名，改不了）；
- *  2. 它要求 rest 参数形式。写成 `[page].astro` 会得到一份**能构建成功、
- *     但首页 404** 的产物——构建日志里没有任何异常。
- * 另外不要试图同时建 `posts/[...page].astro` 和 `posts/[...slug].astro`：
- * Astro 的 detectRouteCollision() 对预渲染路由直接 early-return，
- * 两个路由都编译成 /posts/(.*)，构建看着正常，dev server 静默错配。
- * 所以分页留在根路径，文章详情在 /posts/ 下，两者不同前缀，天然不撞。
+ * 文件名**必须**是 `[...page].astro`：`paginate()` 把参数名硬编码为 `page`
+ * （不是 route 名，改不了），而且要 rest 参数形式。留着这个注释是因为
+ * 写成 `[page].astro` 会得到一份能构建成功、但首页 404 的产物，
+ * 构建日志里没有任何异常。
+ *
+ * 改造前后最大的区别：**这个路由现在会吞掉所有未被其他路由匹配的路径**。
+ * 改造前 `getStaticPaths` 只枚举出真实存在的页，`/foo/` 在构建期就不存在，
+ * 请求会 404。现在 `/foo/`、`/a/b/`、`/wp-admin/` 全都落进这里，
+ * 所以每一处「不合法就 404」都不是防御性代码，而是维持改造前行为的必需品。
  */
-export const getStaticPaths = (async ({ paginate }) => {
-	const posts = await getPublishedPosts();
-	return paginate(posts, { pageSize: PAGE_SIZE });
-}) satisfies GetStaticPaths;
+const db = getDb();
 
-const { page } = Astro.props;
+const { page: rawPage } = Astro.params;
+const currentPage = parsePageParam(rawPage);
+
+// `/1/` 是 `/` 的重复地址。改造前这个地址没有产物（paginate 只在第 1 页
+// 省略 page 段），所以以前是 404；这里改成 301，两个地址渲染同样内容会被
+// 搜索引擎算作重复内容。
+if (currentPage === 1 && rawPage !== undefined) {
+	return Astro.redirect('/', 301);
+}
+
+const total = currentPage === null ? 0 : await countPublishedPosts(db);
+const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+/**
+ * 三种「不合法」走同一条路：不是数字（`/foo/`）、超范围（`/99/`）、
+ * 或者本来就不是页码。
+ *
+ * **不能用 `Astro.rewrite('/404')`**：它渲染出来的是 404 页面，但状态码被
+ * 强制设成 200（node_modules/astro/dist/core/rewrites/handler.js 里
+ * `state.status = 200`）。那样页面看着完全正常，而爬虫会把每一个拼错的
+ * 地址都当成一个有效页面收进索引——正是这个 404 页面要防的事情。
+ * 而且如果 404 那个路由被预渲染，rewrite 还会直接抛 ForbiddenRewrite。
+ *
+ * 所以状态码由这里自己设，内容用和 404.astro 同一个组件。
+ */
+const notFound = currentPage === null || currentPage > lastPage;
+if (notFound) {
+	Astro.response.status = 404;
+}
+
+const posts = notFound
+	? []
+	: await listPublishedPosts(db, {
+			limit: PAGE_SIZE,
+			offset: (currentPage - 1) * PAGE_SIZE,
+		});
+
+const page = buildPage(posts, currentPage ?? 1, PAGE_SIZE, total);
 ---
 
-<DocsLayout
-	title={SITE_TITLE}
-	description={page.currentPage === 1 ? SITE_DESCRIPTION : `全部文章 · 第 ${page.currentPage} 页`}
->
-	<header class="home-header">
-		<h1 class="home-header__title">{SITE_TITLE}</h1>
-		<p class="home-header__desc">{SITE_DESCRIPTION}</p>
-	</header>
+{
+	notFound ? (
+		<NotFound />
+	) : (
+		<DocsLayout
+			title={SITE_TITLE}
+			description={
+				page.currentPage === 1 ? SITE_DESCRIPTION : `全部文章 · 第 ${page.currentPage} 页`
+			}
+		>
+			<header class="home-header">
+				<h1 class="home-header__title">{SITE_TITLE}</h1>
+				<p class="home-header__desc">{SITE_DESCRIPTION}</p>
+			</header>
 
-	{/*
-		首篇大图只在第 1 页开：第 2 页的第一篇只是第 11 新的文章，
-		把它做成巨图会让读者以为那是推荐位。这样「置顶大图 = 最新一篇」
-		在任何一页都为真。
-	*/}
-	<PostList posts={page.data} featuredFirst={page.currentPage === 1} />
+			{/*
+				首篇大图只在第 1 页开：第 2 页的第一篇只是第 11 新的文章，
+				把它做成巨图会让读者以为那是推荐位。这样「置顶大图 = 最新一篇」
+				在任何一页都为真。
+			*/}
+			<PostList posts={page.data} featuredFirst={page.currentPage === 1} />
 
-	<Pagination page={page} />
-</DocsLayout>
+			<Pagination page={page} />
+		</DocsLayout>
+	)
+}
 
 <style>
 	.home-header {

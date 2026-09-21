@@ -1,61 +1,22 @@
 ---
-import Footer from '../components/Footer.astro';
-import SiteHeader from '../components/SiteHeader.astro';
-import BaseLayout from '../layouts/BaseLayout.astro';
+import NotFound from '../components/NotFound.astro';
 
-// 这个文件的存在本身就是功能：没有它，构建产物里就没有 dist/404.html，
-// Cloudflare Pages 会退回到「任何未知路径都返回首页 + HTTP 200」（软 404），
-// 搜索引擎于是把无数个重复首页都收进索引。
-//
-// 刻意用 BaseLayout 而不是 DocsLayout：给一个「找不到页面」配上完整的
-// 文章树和目录，等于把读者从目标内容上引开。只留页头和一个出口。
+/**
+ * 让「没有路由匹配」的请求得到一个真正的 404 状态码。
+ *
+ * 这个文件的存在本身就是功能。SSR 下它的作用是：任何**没有被任何路由匹配**
+ * 的路径由框架渲染这个页面，并且状态码是 404。少了它，未知路径会退回成
+ * 「返回首页 + 200」的软 404，搜索引擎会把无数个重复首页收进索引。
+ *
+ * 内容在 `components/NotFound.astro` —— 因为还有第二个入口：路径匹配上了
+ * `[...page]` 那个 rest 路由、但页码不合法时（`/foo/`），要由那个页面自己
+ * 设状态码并渲染同一个组件。两处必须是同一份内容。
+ *
+ * **上线后要用 `curl -I` 确认返回的是 404 而不是 200。** 这个页面存在的
+ * 唯一目的就是那个状态码，而它是可以静默失效的：`Astro.rewrite()` 会把
+ * 状态码强制设回 200（node_modules/astro/dist/core/rewrites/handler.js 里
+ * `state.status = 200`），页面看起来完全正常。
+ */
 ---
 
-<BaseLayout title="页面不存在" description="你访问的页面不存在或已被移动。" noindex>
-	<SiteHeader />
-	<main id="main" class="not-found">
-		<p class="not-found__code">404</p>
-		<h1 class="not-found__title">这个页面不存在</h1>
-		<p class="not-found__text">链接可能已经失效，或者地址输错了。</p>
-		<nav class="not-found__links" aria-label="出口">
-			<a href="/">返回首页</a>
-			<a href="/archives/">浏览归档</a>
-		</nav>
-	</main>
-	<Footer />
-</BaseLayout>
-
-<style>
-	.not-found {
-		max-width: 34rem;
-		margin-inline: auto;
-		padding: 5rem 1rem 0;
-		text-align: center;
-	}
-	.not-found__code {
-		margin: 0;
-		color: var(--fg-subtle);
-		font-size: 3.5rem;
-		font-weight: 700;
-		line-height: 1;
-		font-variant-numeric: tabular-nums;
-	}
-	.not-found__title {
-		margin: 0.4em 0 0.5em;
-		font-size: 1.6rem;
-	}
-	.not-found__text {
-		margin: 0;
-		color: var(--fg-muted);
-	}
-	.not-found__links {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 1.5rem;
-		margin-top: 2rem;
-	}
-	.not-found__links a {
-		font-weight: 600;
-	}
-</style>
+<NotFound />

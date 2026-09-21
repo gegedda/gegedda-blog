@@ -1,5 +1,4 @@
 ---
-import type { ImageMetadata } from 'astro';
 import BaseHead from '../components/BaseHead.astro';
 import { SITE_LANG } from '../consts';
 
@@ -12,7 +11,8 @@ import { SITE_LANG } from '../consts';
 interface Props {
 	title: string;
 	description?: string;
-	image?: ImageMetadata;
+	/** og:image，站点根相对路径或绝对地址（字符串）。理由见 BaseHead.astro。 */
+	image?: string;
 	ogType?: 'website' | 'article';
 	/** 404 这类页面用：不进索引 */
 	noindex?: boolean;

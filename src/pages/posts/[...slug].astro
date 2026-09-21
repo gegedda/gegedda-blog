@@ -1,29 +1,61 @@
 ---
-import { render, type CollectionEntry } from 'astro:content';
+import NotFound from '../../components/NotFound.astro';
+import { getPublishedPostBySlug } from '../../data/posts.repo';
 import PostLayout from '../../layouts/PostLayout.astro';
+import { getDb } from '../../lib/db';
 import { getPublishedPosts, postNeighbours } from '../../utils/posts';
 
-export async function getStaticPaths() {
-	// 必须在这里过滤草稿：只过滤列表页的话，知道 URL 的人（和爬虫）仍能直接打开草稿。
-	const posts = await getPublishedPosts();
-	return posts.map((post) => ({
-		// 保留 rest 参数形式（[...slug]）：post.id 来自 glob() 加载器，
-		// 会带目录前缀（2026/foo.md → id "2026/foo"），单段 [slug] 匹配不到。
-		params: { slug: post.id },
-		props: { post, ...postNeighbours(posts, post.id) },
-	}));
+/**
+ * 文章详情。
+ *
+ * 改造前这个页面的全部逻辑在 `getStaticPaths` 里：它枚举出每一篇已发布的
+ * 文章，草稿**根本不会被生成出来**，所以「草稿可按 URL 直达」在结构上不可能
+ * 发生。SSR 之后 `getStaticPaths` 被完全忽略（构建时只打一行 WARN），
+ * 那个保护消失了，得由这里自己承担。
+ *
+ * 具体就是下面这一行 `getPublishedPostBySlug` —— 它带着 `publishedWhere()`，
+ * 草稿查不到。**不要**换成不带过滤的查询，也**不要**在拿到 null 之后
+ * 退回到按 slug 再查一次。历史上这个 bug 出现过两次，两次都是静默的：
+ * 草稿不出现在任何列表里，所以你不会发现它能被直接打开。
+ *
+ * 保留 rest 参数形式（[...slug]）：slug 来自文件名，将来允许带目录前缀
+ * （`2026/foo` → slug `2026/foo`）时，单段 [slug] 会匹配不到。
+ */
+const db = getDb();
+
+// params.slug 在 rest 参数下是**未解码**的原文拼接。slug 本身是文件名，
+// 本项目全是 ASCII（postUrl 与 posts.slug 主键都不做编码），所以原样使用。
+const slug = Astro.params.slug;
+const post = slug ? await getPublishedPostBySlug(db, slug) : null;
+
+if (!post) {
+	// 草稿、不存在的 slug、以及空路径都走这里。三种情况给同一个响应，
+	// 免得「404 和 403 的区别」本身泄露了某篇文章的存在。
+	Astro.response.status = 404;
 }
 
-interface Props {
-	post: CollectionEntry<'blog'>;
-	older?: CollectionEntry<'blog'>;
-	newer?: CollectionEntry<'blog'>;
-}
-
-const { post, older, newer } = Astro.props;
-const { Content, headings } = await render(post);
+/**
+ * 上下篇。
+ *
+ * 这里取的是**列表列**（不含 body 与 body_html），所以代价很小；
+ * `postNeighbours` 需要完整的有序列表才能判断相邻关系，为此多查一次
+ * 比在 SQL 里写 prev/next 两条查询更不容易出错——顺序由 SQL 的
+ * `ORDER BY pub_date_utc DESC, slug DESC` 保证，与列表页必然一致。
+ *
+ * 文章多到几千篇时这里要换成两条带索引的查询，现在不必要。
+ */
+const neighbours = post ? postNeighbours(await getPublishedPosts(), post.id) : {};
 ---
 
-<PostLayout post={post} headings={headings} older={older} newer={newer}>
-	<Content />
-</PostLayout>
+{
+	post ? (
+		<PostLayout
+			post={post}
+			headings={post.headings}
+			older={neighbours.older}
+			newer={neighbours.newer}
+		/>
+	) : (
+		<NotFound />
+	)
+}

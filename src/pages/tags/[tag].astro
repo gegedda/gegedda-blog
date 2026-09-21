@@ -1,56 +1,60 @@
 ---
-import type { GetStaticPaths } from 'astro';
+import NotFound from '../../components/NotFound.astro';
 import PostList from '../../components/PostList.astro';
+import { countPublishedPostsByTag, getTagBySegment, listPublishedPostsByTag } from '../../data/posts.repo';
 import DocsLayout from '../../layouts/DocsLayout.astro';
-import { collectTags, getPublishedPosts, type Post, type TagCount } from '../../utils/posts';
+import { getDb } from '../../lib/db';
 
-export const getStaticPaths = (async () => {
-	const posts = await getPublishedPosts();
+/**
+ * 单个标签下的文章列表。
+ *
+ * 改造前 `getStaticPaths` 在构建期把「标签 → 文章」算好当 props 传进来，
+ * 并顺带把标签的**显示名**也传进来。SSR 下两件事都要查库：
+ *
+ *  - URL 里的片段是**规范形式**（`hello-world`），显示名是 frontmatter 里的
+ *    原文（`Hello World`），两者对不上。拿片段去比对文章标签会一篇都筛不出来，
+ *    页面看着正常、只是空的——所以要先 `getTagBySegment` 换回显示名，
+ *    再用 `segment` 去筛（库里两列都有，筛的那列是 segment）。
+ *
+ *  - 标签不存在时要 404。改造前这个地址在构建期就不存在；现在
+ *    `/tags/随便什么/` 会落进这个路由。
+ */
+const db = getDb();
 
-	/**
-	 * params 用 item.param（解码形式），不是 item.slug（编码形式）——
-	 * Astro 收到 params 后会先解码再匹配路由，传编码过的会直接构建失败。
-	 * 详见 utils/posts.ts 里 tagParam 的注释。
-	 *
-	 * 标签名另外通过 props 传给页面，而不是让页面从 params.tag 反解：
-	 * params 里是 hello-world 这种规范形式，和 frontmatter 里的 `Hello World`
-	 * 对不上，拿它去比对会一篇都筛不出来。这里直接传原始标签，
-	 * 顺带把「每个标签对应哪些文章」在构建期算好。
-	 */
-	return collectTags(posts).map((item: TagCount) => ({
-		params: { tag: item.param },
-		props: {
-			tag: item.tag,
-			posts: posts.filter((post: Post) =>
-				(post.data.tags ?? []).some((t) => t.trim() === item.tag),
-			),
-		},
-	}));
-}) satisfies GetStaticPaths;
+// 路由参数是解码后的形式（Astro 先解码再匹配），与 tagParam 的约定一致。
+const segment = Astro.params.tag;
+const tag = segment ? await getTagBySegment(db, segment) : null;
 
-interface Props {
-	tag: string;
-	posts: Post[];
+const posts = tag ? await listPublishedPostsByTag(db, segment!) : [];
+const total = tag ? await countPublishedPostsByTag(db, segment!) : 0;
+
+if (!tag) {
+	Astro.response.status = 404;
 }
-
-const { tag, posts } = Astro.props;
 ---
+
+{
+	tag ? (
+		<DocsLayout title={`标签：${tag.tag}`} description={`带有「${tag.tag}」标签的全部文章。`}>
+			<header class="list-header">
+				<h1 class="list-header__title">{tag.tag}</h1>
+				<p class="list-header__count">
+					共 {total} 篇 · <a href="/tags/">全部标签</a>
+				</p>
+			</header>
+
+			<PostList posts={posts} />
+		</DocsLayout>
+	) : (
+		<NotFound />
+	)
+}
 
 {/*
 	用 DocsLayout 而不是 PageLayout：PageLayout 把内容包进 .prose（38em），
 	那是给正文用的宽度，套在两个卡片的杂志式网格上会把每列压到 300px 左右。
 	凡是渲染 PostList 的页面都走宽栏。
 */}
-<DocsLayout title={`标签：${tag}`} description={`带有「${tag}」标签的全部文章。`}>
-	<header class="list-header">
-		<h1 class="list-header__title">{tag}</h1>
-		<p class="list-header__count">
-			共 {posts.length} 篇 · <a href="/tags/">全部标签</a>
-		</p>
-	</header>
-
-	<PostList posts={posts} />
-</DocsLayout>
 
 <style>
 	.list-header {

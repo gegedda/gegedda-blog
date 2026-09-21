@@ -1,0 +1,69 @@
+---
+import Footer from './Footer.astro';
+import SiteHeader from './SiteHeader.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+/**
+ * 「页面不存在」的内容。
+ *
+ * 抽成组件是因为它现在有**两个**渲染入口，两处的状态码要一样：
+ *
+ *  1. `src/pages/404.astro` —— 没有任何路由匹配时由 Astro 自己渲染，
+ *     状态码是框架给的 404。
+ *  2. `[...page].astro` —— 路径**匹配上了**那个 rest 路由、但页码不合法时
+ *     （`/foo/`、`/2/extra/`、`/99/`）。这里必须由页面自己把状态码设成 404，
+ *     见那个文件里的说明：`Astro.rewrite()` 会强制把状态码改回 200。
+ *
+ * 用 BaseLayout 而不是 DocsLayout：给一个「找不到页面」配上完整的文章树和
+ * 目录，等于把读者从目标内容上引开。只留页头和一个出口。
+ */
+---
+
+<BaseLayout title="页面不存在" description="你访问的页面不存在或已被移动。" noindex>
+	<SiteHeader />
+	<main id="main" class="not-found">
+		<p class="not-found__code">404</p>
+		<h1 class="not-found__title">这个页面不存在</h1>
+		<p class="not-found__text">链接可能已经失效，或者地址输错了。</p>
+		<nav class="not-found__links" aria-label="出口">
+			<a href="/">返回首页</a>
+			<a href="/archives/">浏览归档</a>
+		</nav>
+	</main>
+	<Footer />
+</BaseLayout>
+
+<style>
+	.not-found {
+		max-width: 34rem;
+		margin-inline: auto;
+		padding: 5rem 1rem 0;
+		text-align: center;
+	}
+	.not-found__code {
+		margin: 0;
+		color: var(--fg-subtle);
+		font-size: 3.5rem;
+		font-weight: 700;
+		line-height: 1;
+		font-variant-numeric: tabular-nums;
+	}
+	.not-found__title {
+		margin: 0.4em 0 0.5em;
+		font-size: 1.6rem;
+	}
+	.not-found__text {
+		margin: 0;
+		color: var(--fg-muted);
+	}
+	.not-found__links {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 1.5rem;
+		margin-top: 2rem;
+	}
+	.not-found__links a {
+		font-weight: 600;
+	}
+</style>

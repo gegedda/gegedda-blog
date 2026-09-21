@@ -1,6 +1,6 @@
 ---
-import { Image } from 'astro:assets';
-import { postUrl, type Post } from '../utils/posts';
+import { heroImageSrc, type Post } from '../domain/post';
+import { postUrl } from '../utils/posts';
 import FormattedDate from './FormattedDate.astro';
 
 interface Props {
@@ -11,20 +11,27 @@ interface Props {
 
 const { post, featured = false } = Astro.props;
 const { title, description, pubDate, heroImage } = post.data;
+const heroSrc = heroImageSrc(heroImage);
 ---
 
 <article class:list={['post-card', featured && 'post-card--featured']}>
 	<a class="post-card__link" href={postUrl(post)}>
+		{/*
+			原生 <img>，理由见 layouts/PostLayout.astro。列表页上的图片
+			尤其要靠 width/height 占位：卡片是网格排布，一张图加载完再撑开
+			会把整行的卡片都推下去。
+		*/}
 		{
-			heroImage && (
-				<Image
+			heroSrc && (
+				<img
 					class="post-card__image"
-					src={heroImage}
+					src={heroSrc}
 					alt=""
 					width={featured ? 1200 : 720}
 					height={featured ? 600 : 360}
 					loading={featured ? 'eager' : 'lazy'}
 					fetchpriority={featured ? 'high' : 'auto'}
+					decoding="async"
 				/>
 			)
 		}

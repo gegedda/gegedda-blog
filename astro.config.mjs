@@ -1,22 +1,50 @@
 // @ts-check
 
+import cloudflare from '@astrojs/cloudflare';
 import mdx from '@astrojs/mdx';
-import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'astro/config';
 
 // https://astro.build/config
 export default defineConfig({
-	// 正式站点地址：影响 sitemap、canonical URL 与 RSS 中的链接
+	// 正式站点地址：影响 canonical URL 与 RSS 中的链接。
+	// 换域名时这里、public/robots.txt、docs/部署指南.md 三处要一起改。
 	site: 'https://gegedda-blog.pages.dev',
+
+	// 全站 SSR。内容存在 D1，页面在请求时拼装。
+	output: 'server',
+	adapter: cloudflare({
+		// ⚠️ 这一行不能删。
+		//
+		// 适配器的默认值是 `cloudflare-binding`，也就是 Cloudflare Images——
+		// 一个**付费**产品，而且它会在部署时自动往账号里塞一个 IMAGES 绑定
+		// （适配器源码 index.js:88 `needsImagesBinding = runtimeService === "cloudflare-binding"`，
+		// 还会打一行 "Enabling image processing with Cloudflare Images"）。
+		// 类型定义里的注释有句 "including the default"，那说的是 transformAtBuild，
+		// 很容易读成默认值是 compile —— 不是，看 normalizeImageServiceConfig 的实现。
+		//
+		// 'passthrough' 的含义是：构建期和运行时都不做图片处理，原样输出，
+		// 不碰 Cloudflare Images，也不需要在 Worker 里跑 sharp（那里跑不了）。
+		// 代价是 `<Image>` 不再缩放，LCP 指标（G3）会退，这正是 P6 上 R2
+		// 做预缩放要补回来的东西。
+		imageService: 'passthrough',
+	}),
+
+	// 不用 Astro 的 session：会话是自签名的 cookie（见 src/lib/auth.ts 的计划），
+	// 不需要服务端存储。
+	//
+	// 显式关掉是因为**不关就会自动开通一个 KV 命名空间**：
+	// 适配器源码 index.js:109 `if (session !== false && !session?.driver)` 会
+	// 默认启用 cloudflareKVBinding 驱动并加上 SESSION 绑定。一个用不到的
+	// KV 命名空间会一直在账号里，而且是因为一个没写出来的配置项而存在的。
+	session: false,
+
 	integrations: [
 		mdx(),
-		sitemap({
-			// 分页页不进 sitemap：`/2/`、`/3/` 的内容是首页内容的一部分，
-			// 让它们和 `/` 一起被索引是重复内容，只会分散首页的权重。
-			// 它们仍可被抓取（有正常链接、没有 noindex），只是不主动提交。
-			filter: (page) => !/\/\d+\/$/.test(new URL(page).pathname),
-		}),
+		// sitemap() 集成已移除。它在 SSR 下会**静默产出不含任何文章的 sitemap**：
+		// 注入的 pathname 只在全部路由段都是静态时才填充，于是 /posts/*、/tags/*、
+		// /2/ 全部贡献 0 条，且不报错。这里那个 filter 也就变成了死代码。
+		// 替代品是自建的 src/pages/sitemap-index.xml.ts（P4）。
 	],
 	// Tailwind v4 走 Vite 插件，不要用 @astrojs/tailwind
 	//（那个包 peer 锁死在 Astro 3–5 + Tailwind 3，与本项目不兼容）

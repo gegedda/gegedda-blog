@@ -1,16 +1,15 @@
 ---
-import { Image } from 'astro:assets';
 import PostMeta from '../components/PostMeta.astro';
 import PostNav from '../components/PostNav.astro';
 import TableOfContents from '../components/TableOfContents.astro';
 import TagChips from '../components/TagChips.astro';
-import type { Post } from '../utils/posts';
+import { heroImageSrc, type Post } from '../domain/post';
 import type { Heading } from '../utils/toc';
 import DocsLayout from './DocsLayout.astro';
 
 interface Props {
 	post: Post;
-	/** 来自 render(post) 的 headings，已由页面传进来 */
+	/** 来自 `post.headings`（D1 的 headings_json 缓存列） */
 	headings: Heading[];
 	older?: Post;
 	newer?: Post;
@@ -18,33 +17,54 @@ interface Props {
 
 const { post, headings, older, newer } = Astro.props;
 const { title, description, pubDate, updatedDate, heroImage, tags } = post.data;
+const heroSrc = heroImageSrc(heroImage);
 ---
 
 <DocsLayout title={title} description={description} ogType="article">
 	<article>
+		{/*
+			用原生 <img> 而不是 astro:assets 的 <Image>：`heroImage` 现在是
+			frontmatter 里的路径原文（字符串），不再是被 `image()` 解析过的
+			ImageMetadata，<Image> 接不了它。
+
+			而且接得了也没用——适配器的 imageService 必须是 'passthrough'
+			（见 astro.config.mjs，默认值是付费的 Cloudflare Images），
+			在 passthrough 下 <Image> 本来就不做任何缩放或转格式。
+
+			width/height 必须显式写：浏览器靠它们预留位置，缺失会让图片加载完
+			之后整页重排（CLS 变差）。它们是布局尺寸，不是图片的真实尺寸，
+			真实的缩放由 P6 上 R2 后做。
+		*/}
 		{
-			heroImage && (
-				<Image
+			heroSrc && (
+				<img
 					class="post-hero"
-					src={heroImage}
+					src={heroSrc}
 					alt=""
-					width={1200}
-					height={600}
+					width="1200"
+					height="600"
 					loading="eager"
 					fetchpriority="high"
+					decoding="async"
 				/>
 			)
 		}
 
 		<header class="post-header">
 			<h1 class="post-header__title">{title}</h1>
-			<PostMeta pubDate={pubDate} updatedDate={updatedDate} body={post.body} />
+			<PostMeta pubDate={pubDate} updatedDate={updatedDate} words={post.words} minutes={post.minutes} />
 			<TagChips tags={tags} />
 		</header>
 
-		<div class="prose">
-			<slot />
-		</div>
+		{/*
+			正文来自 D1 的 body_html 缓存列，导入时就由 shared/markdown.ts 渲染好了。
+			读者请求只做「读出来 + 套模板」，不重跑渲染管线——Workers 免费版
+			每个请求只有 10ms CPU，而 shiki 高亮一篇带代码块的文章远超这个数。
+
+			set:html 是安全的：这段 HTML 是我们自己的渲染管线从博主自己写的
+			Markdown 生成的，不是用户提交的内容。
+		*/}
+		<div class="prose" set:html={post.bodyHtml} />
 
 		<PostNav older={older} newer={newer} />
 	</article>

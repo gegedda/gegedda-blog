@@ -6,11 +6,18 @@ import ReadingTime from './ReadingTime.astro';
 interface Props {
 	pubDate: Date;
 	updatedDate?: Date;
-	/** 传了就显示字数与阅读时长；卡片上通常不传 */
-	body?: string;
+	/**
+	 * 传了就显示字数与阅读时长；卡片上通常不传。
+	 *
+	 * 两个值都要给：它们来自 posts 表的缓存列，不是从 Markdown 现算的
+	 * （原因见 ReadingTime.astro）。只给一个的话另一个会变成 0 或 NaN，
+	 * 显示成「0 字 · 约 NaN 分钟」——所以用 `!== undefined` 一起判。
+	 */
+	words?: number;
+	minutes?: number;
 }
 
-const { pubDate, updatedDate, body } = Astro.props;
+const { pubDate, updatedDate, words, minutes } = Astro.props;
 ---
 
 <div class="post-meta">
@@ -20,12 +27,12 @@ const { pubDate, updatedDate, body } = Astro.props;
 	</span>
 
 	{
-		body !== undefined && (
+		words !== undefined && minutes !== undefined && (
 			<>
 				<span class="post-meta__sep" aria-hidden="true">
 					·
 				</span>
-				<ReadingTime body={body} />
+				<ReadingTime words={words} minutes={minutes} />
 			</>
 		)
 	}

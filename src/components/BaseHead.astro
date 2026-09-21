@@ -2,14 +2,21 @@
 // Import the global.css file here so that it is included on
 // all pages through the use of the <BaseHead /> component.
 import '../styles/global.css';
-import type { ImageMetadata } from 'astro';
-import FallbackImage from '../assets/blog-placeholder-1.jpg';
 import { SITE_DESCRIPTION, SITE_LOCALE, SITE_TITLE } from '../consts';
 
 interface Props {
 	title: string;
 	description?: string;
-	image?: ImageMetadata;
+	/**
+	 * og:image。**站点根相对路径或绝对地址**（字符串），不是 ImageMetadata。
+	 *
+	 * 改造前这里是 `import FallbackImage from '../assets/…jpg'`，由 Vite 在构建期
+	 * 产出一个带内容哈希的地址。改为字符串是因为图片搬到了 `public/hero/`：
+	 * 适配器的 imageService 只能是 'passthrough'（默认值是付费的 Cloudflare
+	 * Images，见 astro.config.mjs），`<Image>` 和图片导入在运行时都不做任何
+	 * 处理，那套机制就只剩下复杂度了。
+	 */
+	image?: string;
 	ogType?: 'website' | 'article';
 	/** 404 这类页面用：不进索引 */
 	noindex?: boolean;
@@ -20,7 +27,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const {
 	title,
 	description = SITE_DESCRIPTION,
-	image = FallbackImage,
+	image = '/hero/blog-placeholder-1.jpg',
 	ogType = 'website',
 	noindex = false,
 } = Astro.props;
@@ -28,7 +35,7 @@ const {
 // 站点名统一在这里拼，页面只传自己的标题。
 // 首页标题已经等于站点名，再拼一次会变成「gegedda · gegedda」。
 const fullTitle = title === SITE_TITLE ? title : `${title} · ${SITE_TITLE}`;
-const ogImageURL = new URL(image.src, Astro.url);
+const ogImageURL = new URL(image, Astro.url);
 ---
 
 <!-- Global Metadata -->

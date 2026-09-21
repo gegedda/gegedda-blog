@@ -25,6 +25,19 @@ export const NAV_ITEMS = [
 /** 列表页每页文章数 */
 export const PAGE_SIZE = 10;
 
+/**
+ * RSS 最多收录多少篇。
+ *
+ * 不是 MAX_LIMIT 那种"防止拉全表"的兜底，而是一个内容决定：
+ * 每篇都带**整篇正文**（`<content:encoded>`），所以这个数字直接决定
+ * feed.xml 的体积和生成开销。500 篇会把响应做到几十 MB，而 Workers
+ * 免费版每请求只有 10ms CPU——组装那个字符串本身就会超。
+ *
+ * 20 篇已经远超一般订阅器往回读的深度（多数只读最近 10 篇）。
+ * 这个上限**只影响 feed**，归档页和 sitemap 仍然是全量。
+ */
+export const FEED_LIMIT = 20;
+
 /** 作者信息。留空则相关区块整体不渲染，不会出现 TODO 字样。 */
 export const AUTHOR = {
 	name: '',
