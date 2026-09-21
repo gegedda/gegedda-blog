@@ -1,0 +1,102 @@
+---
+/**
+ * `/admin/posts/[slug]` —— 编辑一篇已存在的文章。
+ *
+ * ── 为什么用 `[slug]` 而不是 `[...slug]` ────────────────────────
+ *
+ * slug 由编辑器生成、接口校验（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤120），
+ * 不含 `/`。`[...slug]` 多出来的"匹配多段路径"的能力在这里用不上，
+ * 而它会把 `/admin/posts/a/b` 也认成 slug 为 `a/b` 的一篇——那是一个
+ * 永远查不到的 slug，表现是 404，但排查时得先想明白路由为什么匹配上了。
+ *
+ * ── 也用 `getPostBySlugForAdmin`，不是 `getPublishedPostBySlug` ──
+ *
+ * 草稿必须打得开——否则存进去的草稿再也改不了了。这是函数名里 `ForAdmin`
+ * 的含义，和 `/admin` 列表用的是同一个豁免。
+ */
+
+import PostEditor from '../../../components/admin/PostEditor.astro';
+import NotFound from '../../../components/NotFound.astro';
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import { getPostBySlugForAdmin, listTagNames } from '../../../data/posts.repo';
+import { getDb } from '../../../lib/db';
+
+const admin = Astro.locals.admin;
+if (!admin) throw new Error('中间件没有注入会话：/admin/posts/[slug] 必须经过鉴权分支');
+
+const db = getDb();
+const slug = Astro.params.slug;
+const post = slug ? await getPostBySlugForAdmin(db, slug) : null;
+
+// 不存在 → 404，而不是渲染一个空表单。
+//
+// ⚠️ 用 `Astro.response.status` 而不是 `Astro.rewrite('/404')`：后者渲染的
+// 内容一样，但状态码被强制设回 200（`[...page].astro` 的注释里记了这个坑
+// 的出处）。一个 200 的"没找到"会让 `fetch` 的调用方以为拿到了文章。
+if (!post) {
+	Astro.response.status = 404;
+}
+
+// 只在真的渲染编辑器时才查标签——404 分支不需要它。
+const tagNames = post ? await listTagNames(db) : [];
+---
+
+{
+	post ? (
+		<AdminLayout title={`编辑：${post.data.title}`} current="list">
+			<div class="admin-head">
+				<h1 class="admin-head__title">{post.data.title}</h1>
+				<p class="admin-head__meta">
+					<code>{post.id}</code>
+					{post.data.draft ? (
+						<span class="badge badge--draft">草稿</span>
+					) : (
+						<a href={`/posts/${post.id}/`} target="_blank" rel="noopener">
+							查看线上页面
+						</a>
+					)}
+				</p>
+			</div>
+
+			{/*
+				slug 不可改：编辑器的 slug 输入框在 update 模式下是 readonly，
+				接口层再挡一次（PUT 的 slug 必须等于 URL 参数）。
+				这里传的 `post` 带完整的 Markdown 原文，编辑器用它填 textarea——
+				不经过任何往返，所以"打开 → 原样保存"是恒等的。
+			*/}
+			<PostEditor mode="update" post={post} tagNames={tagNames} />
+		</AdminLayout>
+	) : (
+		<NotFound />
+	)
+}
+
+<style>
+	.admin-head {
+		margin-bottom: 1.25rem;
+	}
+	.admin-head__title {
+		margin: 0 0 0.3rem;
+		font-size: 1.4rem;
+	}
+	.admin-head__meta {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin: 0;
+		color: var(--fg-muted);
+		font-size: 0.85rem;
+	}
+	.badge {
+		display: inline-block;
+		padding: 0.1rem 0.45rem;
+		border: 1px solid var(--border);
+		border-radius: var(--r-sm);
+		color: var(--fg-muted);
+		font-size: 0.75rem;
+	}
+	.badge--draft {
+		color: var(--fg);
+		border-color: var(--fg-subtle);
+	}
+</style>

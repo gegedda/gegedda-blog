@@ -1,0 +1,263 @@
+---
+/**
+ * `/admin` —— 全部文章（**含草稿**）。
+ *
+ * ── 为什么这里读得到草稿 ───────────────────────────────────────
+ *
+ * 用的是 `listPostsForAdmin`，函数名里的 `ForAdmin` 就是
+ * "豁免 `publishedWhere()`"的标记。后台读不到草稿的话，草稿等于写进了
+ * 黑洞——存下来了、但再也找不回来。
+ *
+ * 排序也和外面对不上：这里按 `updated_at` 倒序（最近动过的在最上面），
+ * 读者侧按 `pub_date_utc` 倒序。单人后台里找的是"我刚才改的那篇"，
+ * 不是"最新发布的"。
+ *
+ * ── 会话一定存在 ───────────────────────────────────────────────
+ *
+ * 走到这个页面说明中间件已经验过签并注入了 `locals.admin`。所以下面
+ * **不是防御性代码**——它是让"中间件白名单被改错"这件事变成一个 500，
+ * 而不是一个看起来完全正常的、渲染给未登录访客的后台页面。
+ */
+
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { countPostsForAdmin, listPostsForAdmin } from '../../data/posts.repo';
+import { getDb } from '../../lib/db';
+
+const admin = Astro.locals.admin;
+if (!admin) throw new Error('中间件没有注入会话：/admin 必须经过鉴权分支');
+
+const db = getDb();
+
+// 单人博客，一次全列出来比翻页好用。上限是防御性的——它只防"某天导入了
+// 几千篇"把这一页拖垮，正常用永远够。
+const LIMIT = 300;
+const [posts, total] = await Promise.all([
+	listPostsForAdmin(db, { limit: LIMIT }),
+	countPostsForAdmin(db),
+]);
+
+/**
+ * 日期显示成 `2026-09-20`。
+ *
+ * 时区必须显式写 `Asia/Shanghai`——和 `FormattedDate.astro` 是同一条约定，
+ * 理由也一样：不写的话渲染结果取决于运行环境的 TZ，`pubDate` 是
+ * `'2026-09-20'` 的文章会在负时区的机器上显示成前一天。
+ *
+ * 这里没有再引入一份日期逻辑：显示用的年月日和文章页用的是同一个时区，
+ * 而 `postYear/postMonth/postDay` 那三个函数存在的原因是**归档分组**要
+ * 拿到数字，不是格式化。
+ */
+const DATE_FORMAT = new Intl.DateTimeFormat('en-CA', {
+	timeZone: 'Asia/Shanghai',
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+});
+---
+
+<AdminLayout title="全部文章" current="list">
+	<div class="admin-head">
+		<h1 class="admin-head__title">全部文章</h1>
+		<p class="admin-head__count">
+			{total} 篇{total > posts.length && `（只显示最近 ${LIMIT} 篇）`}
+		</p>
+	</div>
+
+	{
+		posts.length === 0 ? (
+			<p class="admin-empty">
+				还没有文章。<a href="/admin/new">写第一篇</a>。
+			</p>
+		) : (
+			<table class="admin-table">
+				<thead>
+					<tr>
+						<th scope="col">标题</th>
+						<th scope="col">状态</th>
+						<th scope="col">日期</th>
+						<th scope="col">标签</th>
+						<th scope="col"><span class="sr-only">操作</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					{posts.map((post) => (
+						<tr data-row={post.id}>
+							<td class="admin-table__title">
+								<a href={`/admin/posts/${post.id}`}>{post.data.title}</a>
+								<code class="admin-table__slug">{post.id}</code>
+							</td>
+							<td>
+								{post.data.draft ? (
+									<span class="badge badge--draft">草稿</span>
+								) : (
+									<span class="badge">已发布</span>
+								)}
+							</td>
+							<td class="admin-table__date">{DATE_FORMAT.format(post.data.pubDate)}</td>
+							<td class="admin-table__tags">{post.data.tags.join('、')}</td>
+							<td class="admin-table__actions">
+								{!post.data.draft && (
+									<a href={`/posts/${post.id}/`} target="_blank" rel="noopener">
+										查看
+									</a>
+								)}
+								<button type="button" data-delete={post.id}>
+									删除
+								</button>
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		)
+	}
+
+	<p class="admin-note" role="alert" data-error hidden></p>
+
+	{/*
+		删除。
+
+		`confirm()` 而不是自绘对话框：这是**唯一**一处不可逆操作，
+		而原生对话框不可能被脚本意外跳过。自绘的还得处理焦点陷阱、
+		Esc、点遮罩——为一个一年点不了几次的按钮不值得，而且做漏了
+		反而更危险。
+
+		DELETE 也要带 `Content-Type: application/json` 和一个 `'{}'` 的 body：
+		中间件的 CSRF 检查对**所有**写方法一视同仁（计划 §13.3）。
+		漏了的话报的是 415，而"删除为什么报 415"是个查不出原因的问题。
+	*/}
+	<script>
+		const errorBox = document.querySelector<HTMLElement>('[data-error]');
+
+		for (const button of document.querySelectorAll<HTMLButtonElement>('[data-delete]')) {
+			button.addEventListener('click', async () => {
+				const slug = button.dataset.delete;
+				if (!slug) return;
+				if (!confirm(`删除「${slug}」？\n\n这篇文章会被移出列表，但内容会留在修订记录里。`)) {
+					return;
+				}
+
+				button.disabled = true;
+				if (errorBox) errorBox.hidden = true;
+
+				try {
+					const res = await fetch(`/api/admin/posts/${encodeURIComponent(slug)}`, {
+						method: 'DELETE',
+						headers: { 'Content-Type': 'application/json' },
+						body: '{}',
+					});
+
+					if (!res.ok) {
+						const data = (await res.json().catch(() => null)) as { error?: string } | null;
+						throw new Error(data?.error ?? `HTTP ${res.status}`);
+					}
+
+					// 直接从表里摘掉这一行，不整页刷新：刷新会丢掉滚动位置，
+					// 而这个列表正是"最近改过的在最上面"，删的常常不在首屏。
+					document.querySelector(`[data-row="${CSS.escape(slug)}"]`)?.remove();
+				} catch (err) {
+					button.disabled = false;
+					if (errorBox) {
+						errorBox.textContent = `删除失败：${err instanceof Error ? err.message : String(err)}`;
+						errorBox.hidden = false;
+					}
+				}
+			});
+		}
+	</script>
+
+	<style>
+		.admin-head {
+			display: flex;
+			align-items: baseline;
+			justify-content: space-between;
+			gap: 1rem;
+			margin-bottom: 1.25rem;
+		}
+		.admin-head__title {
+			margin: 0;
+			font-size: 1.4rem;
+		}
+		.admin-head__count {
+			margin: 0;
+			color: var(--fg-muted);
+			font-size: 0.85rem;
+		}
+		.admin-empty {
+			color: var(--fg-muted);
+		}
+		.admin-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 0.9rem;
+		}
+		.admin-table th,
+		.admin-table td {
+			padding: 0.6rem 0.5rem;
+			text-align: left;
+			border-bottom: 1px solid var(--border);
+			vertical-align: top;
+		}
+		.admin-table th {
+			color: var(--fg-muted);
+			font-weight: 500;
+			font-size: 0.8rem;
+		}
+		.admin-table__title a {
+			font-weight: 600;
+		}
+		.admin-table__slug {
+			display: block;
+			margin-top: 0.15rem;
+			color: var(--fg-subtle);
+			font-size: 0.75rem;
+		}
+		.admin-table__date {
+			white-space: nowrap;
+			color: var(--fg-muted);
+			font-variant-numeric: tabular-nums;
+		}
+		.admin-table__tags {
+			color: var(--fg-muted);
+			font-size: 0.8rem;
+		}
+		.admin-table__actions {
+			display: flex;
+			gap: 0.75rem;
+			white-space: nowrap;
+		}
+		.admin-table__actions button {
+			padding: 0;
+			color: var(--fg-muted);
+			background: none;
+			border: none;
+			font: inherit;
+			text-decoration: underline;
+			cursor: pointer;
+		}
+		.admin-table__actions button:hover {
+			color: var(--fg);
+		}
+		.admin-table__actions button:disabled {
+			opacity: 0.5;
+			cursor: default;
+		}
+		.badge {
+			display: inline-block;
+			padding: 0.1rem 0.45rem;
+			border: 1px solid var(--border);
+			border-radius: var(--r-sm);
+			color: var(--fg-muted);
+			font-size: 0.75rem;
+		}
+		.badge--draft {
+			color: var(--fg);
+			border-color: var(--fg-subtle);
+		}
+		.admin-note {
+			margin-top: 1rem;
+			color: var(--danger, #c0392b);
+			font-size: 0.85rem;
+		}
+	</style>
+</AdminLayout>

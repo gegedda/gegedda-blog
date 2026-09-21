@@ -1,0 +1,147 @@
+---
+import BaseLayout from './BaseLayout.astro';
+
+/**
+ * 后台的外壳：`BaseLayout` + 一条极简导航。
+ *
+ * ── 为什么不用 DocsLayout ──────────────────────────────────────
+ *
+ * `DocsLayout` 的侧栏是 `SiteSidebar`，它每次渲染都会去读全站文章树
+ * （计划里的坑 #11）。后台不需要那棵树——后台自己的列表就在页面上，
+ * 而且是另一套排序（按 `updated_at`）。两个列表并存只会让人困惑
+ * 「为什么侧栏里没有我刚存的那篇草稿」。
+ *
+ * ── noindex 是**无条件**的，不做成 prop ────────────────────────
+ *
+ * 做成参数就等于给「某个后台页面忘了传」留了口子，而那个口子的后果
+ * 不是报错，是某一天后台出现在搜索结果里。这里没有需要被收录的后台页面，
+ * 所以没有理由留这个开关。
+ *
+ * `<meta name="robots">`（BaseHead 写的）和中间件加的
+ * `X-Robots-Tag` 响应头是两件事，都要有——一个是页面级的，
+ * 一个覆盖非 HTML 响应。`public/robots.txt` 的 `Disallow` 是第三道，
+ * 它防的是抓取而不是收录。
+ */
+interface Props {
+	title: string;
+	/** 当前页在导航里的高亮项，可选。 */
+	current?: 'list' | 'new';
+}
+
+const { title, current } = Astro.props;
+
+const LINKS = [
+	{ key: 'list' as const, href: '/admin', label: '全部文章' },
+	{ key: 'new' as const, href: '/admin/new', label: '新建' },
+];
+---
+
+<BaseLayout title={title} noindex>
+	<header class="admin-bar">
+		<nav class="admin-bar__nav" aria-label="后台">
+			{
+				LINKS.map((link) => (
+					<a
+						href={link.href}
+						class="admin-bar__link"
+						aria-current={current === link.key ? 'page' : undefined}
+					>
+						{link.label}
+					</a>
+				))
+			}
+		</nav>
+
+		<div class="admin-bar__right">
+			<a class="admin-bar__link" href="/">查看站点</a>
+			<button type="button" class="admin-bar__link" data-logout>
+				登出
+			</button>
+		</div>
+	</header>
+
+	<main id="main" class="admin-main">
+		<slot />
+	</main>
+
+	{/*
+		登出。用打包的 <script>（不是 is:inline）：它要走 Vite 才能在出错时
+		有正常的报错位置，而 is:inline 的脚本会原样塞进每个后台响应。
+
+		⚠️ 这里**只提供"这台设备登出"**。"所有设备登出"（logout-all）是
+		破坏性更强的操作，不该靠一个按钮的文案区分——它留给部署指南里的
+		一条命令，或将来一个需要二次确认的界面。
+	*/}
+	<script>
+		for (const button of document.querySelectorAll('[data-logout]')) {
+			button.addEventListener('click', async () => {
+				button.disabled = true;
+				try {
+					// Content-Type 必须是 application/json：中间件的 CSRF 检查
+					// 要求它，跨站表单设不了这个头（计划 §13.3）。
+					const res = await fetch('/api/admin/logout', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: '{}',
+					});
+					if (!res.ok) throw new Error(String(res.status));
+					location.href = '/login';
+				} catch {
+					// 清 cookie 失败时**不能装作成功了**：留在原地并让按钮可再点，
+					// 比跳到登录页然后下一个请求又发现自己是登录态好。
+					button.disabled = false;
+					alert('登出失败，请重试。如果一直失败，可以直接关掉浏览器标签页。');
+				}
+			});
+		}
+	</script>
+
+	<style>
+		.admin-bar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1rem;
+			padding: 0.6rem 1rem;
+			background-color: var(--bg-subtle);
+			border-bottom: 1px solid var(--border);
+			font-size: 0.9rem;
+		}
+		.admin-bar__nav,
+		.admin-bar__right {
+			display: flex;
+			align-items: center;
+			gap: 0.25rem;
+		}
+		.admin-bar__link {
+			padding: 0.35rem 0.7rem;
+			color: var(--fg-muted);
+			background: none;
+			border: none;
+			border-radius: var(--r-sm);
+			font: inherit;
+			text-decoration: none;
+			cursor: pointer;
+		}
+		.admin-bar__link:hover {
+			color: var(--fg);
+			background-color: var(--bg);
+		}
+		/* aria-current 是唯一的选中态来源，与 ThemeToggle 的 aria-pressed 同一套约定 */
+		.admin-bar__link[aria-current='page'] {
+			color: var(--fg);
+			background-color: var(--bg);
+		}
+		.admin-bar__link:disabled {
+			opacity: 0.5;
+			cursor: default;
+		}
+
+		/* 后台不套 .prose 的文章排版，行宽由编辑器自己控制 */
+		.admin-main {
+			max-width: 72rem;
+			margin: 0 auto;
+			padding: 1.5rem 1rem 4rem;
+		}
+	</style>
+</BaseLayout>

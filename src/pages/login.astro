@@ -1,0 +1,235 @@
+---
+/**
+ * `/login` —— 口令登录。
+ *
+ * ── 这个页面做的事比看起来多 ──────────────────────────────────
+ *
+ * 1. 已经登录的人直接放行，不再显示表单（否则「我明明是登录状态，
+ *    为什么还让我输密码」）。
+ * 2. 还没设过密码的人直接送去做初始化。**服务端判**而不是等登录被 409 拒绝，
+ *    因为那条路径要用户先输一遍口令、等 300ms 派生、再被告知"这里不是你要的地方"。
+ * 3. 把 salt 与 iterations 内联进 HTML。这样登录只需要**一次**网络往返
+ *    （`/api/admin/login-params` 那个接口是给脚本和无 JS 场景留的）。
+ *
+ * ── 为什么这些判定写在页面里，而不是让中间件放行后由客户端去问 ──
+ *
+ * `/login` 是公开路径，中间件那一整段鉴权逻辑根本不会执行（那是有意的：
+ * 公开页面不碰 settings，否则首页每来一个访客就多两次 D1 读）。所以
+ * 这里必须自己做一次会话校验——复用 `verifySession`，不是另写一份。
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE_TITLE } from '../consts';
+import { PBKDF2_ITERATIONS, parsePasswordHash } from '../lib/auth';
+import { getDb } from '../lib/db';
+import { safeNextPath } from '../lib/admin-paths';
+import { readSessionCookie, verifySession } from '../lib/session';
+import { getPasswordHashRaw, getSessionEpoch, getSessionSecret } from '../lib/settings';
+
+const db = getDb();
+
+// `next` 必须先过 `safeNextPath` 才能用。不过滤的话
+// `/login?next=//evil.example` 就是一个现成的钓鱼跳板——用户在本站
+// 认认真真输了密码，然后被送到外站。
+const next = safeNextPath(Astro.url.searchParams.get('next'));
+
+const [secret, currentEpoch, stored] = await Promise.all([
+	getSessionSecret(db),
+	getSessionEpoch(db),
+	getPasswordHashRaw(db).then(parsePasswordHash),
+]);
+
+// 已经有密码 + 带着有效会话 → 没什么可做的，直接进去。
+if (secret && stored) {
+	const session = await verifySession(readSessionCookie(Astro.request), {
+		secret,
+		currentEpoch,
+		nowSeconds: Math.floor(Date.now() / 1000),
+	});
+	if (session) return Astro.redirect(next, 302);
+}
+
+// 还没设过密码。`parsePasswordHash` 对坏格式也返回 null，
+// 所以「字符串写坏了」和「从没设过」走同一条路——这正是不让登录接口
+// 500 的那个选择所要求的行为。
+if (!stored) return Astro.redirect('/admin/setup', 302);
+---
+
+<BaseLayout title={`登录 · ${SITE_TITLE}`} noindex>
+	<main id="main" class="gate">
+		<h1 class="gate__title">登录</h1>
+		<p class="gate__lead">需要口令才能进入后台。口令不会离开这个浏览器。</p>
+
+		{/*
+			salt 与 iterations 走 data-* 属性传递，沿用项目现有约定
+			（不用序列化 JSON 的 <script> 标签）。两个都不是秘密：
+			salt 的作用是让同样的口令在不同站点派生出不同的 verifier，
+			iterations 必须和校验端一致，所以它由服务端说了算。
+		*/}
+		<form
+			class="gate__form"
+			data-login
+			data-salt={stored.salt}
+			data-iterations={PBKDF2_ITERATIONS}
+			data-next={next}
+		>
+			<label class="gate__label" for="passphrase">口令</label>
+			<input
+				class="gate__input"
+				id="passphrase"
+				name="passphrase"
+				type="password"
+				autocomplete="current-password"
+				required
+				autofocus
+			/>
+
+			<button class="gate__submit" type="submit">登录</button>
+
+			{/* role="alert" 让读屏软件在它出现时立刻念出来，而不是等用户逛到它 */}
+			<p class="gate__error" role="alert" data-error hidden></p>
+		</form>
+
+		<noscript>
+			<p class="gate__error">
+				这个页面需要 JavaScript：口令的派生（PBKDF2，60 万轮）在浏览器里完成，
+				服务端只收到派生结果。
+			</p>
+		</noscript>
+	</main>
+
+	<script>
+		import { deriveVerifier } from '../lib/auth';
+
+		const form = document.querySelector<HTMLFormElement>('[data-login]');
+		const input = form?.querySelector<HTMLInputElement>('#passphrase');
+		const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+		const error = form?.querySelector<HTMLElement>('[data-error]');
+
+		/**
+		 * 登录成功后去哪。
+		 *
+		 * **不在客户端解析 `?next=`。** 服务端已经用 `safeNextPath` 处理过了，
+		 * 这里原样取用即可。两边各过滤一遍看着更保险，实际是把
+		 * 「开放重定向」这条规则的实现变成了两份——而两份迟早会漂移，
+		 * 到时候出问题的是两者中**更宽松**的那一份。
+		 */
+		const target = form?.dataset.next || '/admin';
+
+		function showError(message: string) {
+			if (!error) return;
+			error.textContent = message;
+			error.hidden = false;
+		}
+
+		form?.addEventListener('submit', async (event) => {
+			event.preventDefault();
+			if (!form || !input || !submit) return;
+			if (error) error.hidden = true;
+
+			const salt = form.dataset.salt;
+			const iterations = Number(form.dataset.iterations);
+			if (!salt || !Number.isFinite(iterations)) {
+				showError('页面上的参数缺失，请刷新重试。');
+				return;
+			}
+
+			// 600 000 轮要 200–500ms。不给反馈的话，用户会以为按钮没反应
+			// 而再点一次——那时会有两次派生同时在跑。
+			submit.disabled = true;
+			const label = submit.textContent;
+			submit.textContent = '计算中…';
+
+			try {
+				const verifier = await deriveVerifier(input.value, salt, iterations);
+
+				const res = await fetch('/api/admin/login', {
+					method: 'POST',
+					// Content-Type 是中间件 CSRF 检查要求的第二道锁（另一道是 Origin）。
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ verifier }),
+				});
+
+				if (res.ok) {
+					location.href = target;
+					return;
+				}
+
+				// 409 = 服务端那边没有密码（比如在另一个标签页里刚被重置了）。
+				// 这里直接把用户送去初始化，而不是显示"口令不正确"误导他。
+				if (res.status === 409) {
+					location.href = '/admin/setup';
+					return;
+				}
+
+				const data = (await res.json().catch(() => null)) as { error?: string } | null;
+				showError(data?.error ?? `登录失败（HTTP ${res.status}）。`);
+				input.value = '';
+				input.focus();
+			} catch {
+				// 网络断了、或者 deriveVerifier 抛了（浏览器太老、没有 WebCrypto）。
+				// 两种都不该显示"口令不正确"。
+				showError('登录请求没有完成。请检查网络后重试。');
+			} finally {
+				submit.disabled = false;
+				if (label) submit.textContent = label;
+			}
+		});
+	</script>
+
+	<style>
+		.gate {
+			max-width: 22rem;
+			margin: 12vh auto 0;
+			padding: 0 1rem;
+		}
+		.gate__title {
+			margin: 0 0 0.5rem;
+			font-size: 1.5rem;
+		}
+		.gate__lead {
+			margin: 0 0 1.5rem;
+			color: var(--fg-muted);
+			font-size: 0.9rem;
+			line-height: 1.6;
+		}
+		.gate__form {
+			display: grid;
+			gap: 0.75rem;
+		}
+		.gate__label {
+			font-size: 0.85rem;
+			color: var(--fg-muted);
+		}
+		.gate__input,
+		.gate__submit {
+			padding: 0.55rem 0.75rem;
+			font: inherit;
+			color: var(--fg);
+			background-color: var(--bg-subtle);
+			border: 1px solid var(--border);
+			border-radius: var(--r-md);
+		}
+		.gate__input:focus-visible,
+		.gate__submit:focus-visible {
+			outline: 2px solid var(--accent);
+			outline-offset: 1px;
+		}
+		.gate__submit {
+			color: var(--bg);
+			background-color: var(--fg);
+			border-color: var(--fg);
+			cursor: pointer;
+		}
+		.gate__submit:disabled {
+			opacity: 0.6;
+			cursor: default;
+		}
+		.gate__error {
+			margin: 0;
+			color: var(--danger, #c0392b);
+			font-size: 0.85rem;
+			line-height: 1.6;
+		}
+	</style>
+</BaseLayout>

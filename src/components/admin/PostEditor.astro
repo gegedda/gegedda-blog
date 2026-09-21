@@ -1,0 +1,908 @@
+---
+/**
+ * 后台编辑器。
+ *
+ * ══ 为什么是一个 `<textarea>`，而不是 Vditor ═══════════════════
+ *
+ * 计划里原本定的是 Vditor 的 `sv` 模式，理由是"分屏模式下 `getValue()`
+ * 读的是 `element.textContent`，就是你敲的字节，而 `ir` 会把整篇 DOM
+ * 反序列化回去、静默改写源码"。
+ *
+ * **实测把这个前提否掉了。** 用真的 `lute.min.js` 在 Node 里跑真入口
+ * （`scripts/` 下那个临时探针，跑完即删），复刻 `getValue()` 的两步
+ * （`SpinVditorSVDOM` → `textContent`），对 17 组输入的结果是
+ * **逐字节相同 0 组**，其中 **6 组内容被改写**：
+ *
+ *     四空格嵌套列表   `    - b`          →  `  - b`
+ *     行尾两空格换行   `line one  `       →  `line one`
+ *     行内码           `a `` b ` c `` d`  →  `a ``b ` c`` d`
+ *     分隔线           `---`              →  `***`
+ *
+ * 原因是 `sv` 模式**并不**是纯文本编辑面：`sv.element` 是一个
+ * `contenteditable` 的 `<pre>`（`dist/index.js` 的 `sv/index.ts` 一节），
+ * 而 `inputEvent` 每次输入都会把当前块交给
+ * `lute.SpinVditorSVDOM(text)` 重新解析、再 `innerHTML = html` 写回去。
+ * 也就是说它是**逐块的 Lute 往返**，和 `ir` 是同一类东西，只是范围小些。
+ *
+ * 这直接违反本项目最硬的一条：**库里只存 Markdown 源码，且不静默改写它**。
+ * 所以这里不用任何引擎渲染编辑面——一个 `<textarea>`，`value` 就是你敲的
+ * 字节，往返是恒等**由构造保证**，不需要靠测试去守。
+ *
+ * 这个选择的连带好处（都不是主要理由，但都是白得的）：
+ *
+ *   - 去掉 3.6 MB 的 `lute.min.js` 自托管资源、`sync-vditor` 脚本、
+ *     `astro:config:setup` 挂载点、`public/vditor/` 的 .gitignore 条目
+ *   - §13.5.5 那两个"必须关掉否则静默出错"的选项（`cache` 会把内容按
+ *     id 存进 localStorage，于是打开 A 文章显示 B 的内容）整类消失
+ *   - §13.5.6 那张"必须去掉哪些工具栏项"的表（其中 `edit-mode` 会把
+ *     IR/WYSIWYG 变成可点击的按钮，等于把已定的决策变成开关）整类消失
+ *   - 不引入第三个高亮器，`preview` 面板里的颜色只可能来自 Shiki
+ *
+ * 代价：编辑区没有语法高亮、没有所见即所得。换来的是**存进去的东西
+ * 与敲进去的东西逐字节相同**。工具栏仍在（下面那排按钮直接往选区里
+ * 插 Markdown 文本），它只会插入、不会重排。
+ *
+ * ══ 预览面板 ═══════════════════════════════════════════════════
+ *
+ * 用的是 `shared/markdown.ts` —— **和读者侧、和导入脚本完全同一份渲染管线**。
+ * 容器是 `.prose`，也就是文章页正文的容器类，所以 `global.css` 里
+ * `.prose pre` / `.prose .astro-code` 的样式（含 `light-dark(var(--shiki-light), …)`）
+ * 原样生效。于是预览不是"像"文章，而是同一套排版。
+ *
+ * **同一份产出既用于预览也用于保存**：面板里的 HTML 就是将要写进
+ * `posts.body_html` 的那一份。所以"预览 = 存储"是构造上的，不靠两处对齐。
+ *
+ * Shiki 如何不拖慢键盘：面板默认关闭，**首次打开才** `await import()`
+ * （约 1.4 MB，含 622 KB 的 base64 wasm 与按需加载的语言块），之后走
+ * HTTP 缓存。`input` 回调里只置脏标记 + 重置 900ms 的定时器，真正
+ * 的渲染发生在定时器里，且**同一时刻只允许一次渲染在跑**——并发渲染会让
+ * 连着敲的几个语言块一起等同一个 promise，还可能把后发的旧内容盖在新内容上。
+ */
+
+import type { Post } from '../../domain/post';
+import { todayDateRaw } from '../../utils/date-raw';
+
+interface Props {
+	/** `create` 走 POST，`update` 走 PUT。 */
+	mode: 'create' | 'update';
+	/** 已存在的文章（update 模式）。create 模式传 null。 */
+	post?: Post | null;
+	/** 标签候选，来自 `listTagNames()`。 */
+	tagNames?: string[];
+}
+
+const { mode, post = null, tagNames = [] } = Astro.props;
+
+/**
+ * 交给客户端的初始值。
+ *
+ * 走 `data-*` 属性而不是序列化 JSON 的 `<script>` 标签——沿用
+ * `ThemeToggle.astro` 与 `BaseLayout.astro` 的约定，而且 Astro 会自动
+ * 做属性转义，不用手写 `JSON.stringify` 的 XSS 防护。
+ *
+ * 传的是 **Markdown 原文**（`post.body`），不是 HTML：编辑面就是源码，
+ * 不经过任何往返。
+ */
+const initial = {
+	slug: post?.id ?? '',
+	title: post?.data.title ?? '',
+	description: post?.data.description ?? '',
+	pubDateRaw: post ? toDateRaw(post.data.pubDate) : todayDateRaw(),
+	updatedDateRaw: post?.data.updatedDate ? toDateRaw(post.data.updatedDate) : '',
+	heroImage: post?.data.heroImage ?? '',
+	draft: post?.data.draft ?? true,
+	tags: post?.data.tags ?? [],
+	body: post?.body ?? '',
+};
+
+/**
+ * `Date` → `YYYY-MM-DD`（上海时区）。
+ *
+ * `Post.data.pubDate` 是仓储层用 `new Date(pub_date_raw)` 还原出来的，
+ * 所以这里取回原文最稳的方式就是按同一个时区格式化回去。
+ */
+function toDateRaw(date: Date): string {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Shanghai',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit',
+	}).format(date);
+}
+
+/** 工具栏。`insert` 是往选区里塞的模板，`$1` 位置放选中内容。 */
+const TOOLS: { key: string; label: string; title: string; wrap?: [string, string]; line?: string; block?: string }[] =
+	[
+		{ key: 'h2', label: 'H2', title: '二级标题', line: '## ' },
+		{ key: 'h3', label: 'H3', title: '三级标题', line: '### ' },
+		{ key: 'bold', label: '粗', title: '粗体', wrap: ['**', '**'] },
+		{ key: 'italic', label: '斜', title: '斜体', wrap: ['*', '*'] },
+		{ key: 'strike', label: '删', title: '删除线', wrap: ['~~', '~~'] },
+		{ key: 'code', label: '码', title: '行内代码', wrap: ['`', '`'] },
+		{ key: 'quote', label: '引', title: '引用', line: '> ' },
+		{ key: 'ul', label: '•', title: '无序列表', line: '- ' },
+		{ key: 'ol', label: '1.', title: '有序列表', line: '1. ' },
+		{ key: 'task', label: '☐', title: '任务列表', line: '- [ ] ' },
+		{ key: 'link', label: '链', title: '链接', wrap: ['[', '](https://)'] },
+		{ key: 'image', label: '图', title: '图片', wrap: ['![', '](/hero/)'] },
+		{ key: 'table', label: '表', title: '表格', block: '| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |\n' },
+		{ key: 'hr', label: '—', title: '分隔线', block: '\n---\n\n' },
+		{ key: 'fence', label: '{}', title: '代码块', block: '```\n\n```\n' },
+	];
+---
+
+<div
+	class="editor"
+	data-editor
+	data-mode={mode}
+	data-post={JSON.stringify(initial)}
+	data-tools={JSON.stringify(TOOLS)}
+>
+	<!-- 恢复备份的横幅。**绝不自动恢复**，见下面的脚本。 -->
+	<div class="editor__banner" data-restore-banner hidden>
+		<span data-restore-text></span>
+		<button type="button" data-restore>恢复</button>
+		<button type="button" data-discard>丢弃</button>
+	</div>
+
+	<div class="editor__meta">
+		<label class="field field--wide">
+			<span class="field__label">标题</span>
+			<input type="text" data-field="title" maxlength="200" />
+		</label>
+
+		<label class="field">
+			<span class="field__label">
+				slug（网址）
+				{mode === 'update' && <em class="field__note">发布后不可改</em>}
+			</span>
+			<input
+				type="text"
+				data-field="slug"
+				maxlength="120"
+				pattern="[a-z0-9]+(-[a-z0-9]+)*"
+				readonly={mode === 'update'}
+			/>
+		</label>
+
+		<label class="field">
+			<span class="field__label">发布日期</span>
+			<input type="date" data-field="pubDateRaw" />
+		</label>
+
+		<label class="field">
+			<span class="field__label">修改日期<em class="field__note">可空</em></span>
+			<input type="date" data-field="updatedDateRaw" />
+		</label>
+
+		<label class="field field--wide">
+			<span class="field__label">摘要</span>
+			<textarea data-field="description" rows="2" maxlength="1000"></textarea>
+		</label>
+
+		<label class="field field--wide">
+			<span class="field__label">
+				封面图<em class="field__note">P5 只支持已有图片路径或外链，上传在 P6</em>
+			</span>
+			<input type="text" data-field="heroImage" maxlength="500" placeholder="/hero/example.jpg" />
+		</label>
+
+		<label class="field field--wide">
+			<span class="field__label">
+				标签<em class="field__note">逗号分隔，最多 20 个</em>
+			</span>
+			<input type="text" data-field="tags" list="editor-tag-names" />
+			<datalist id="editor-tag-names">
+				{tagNames.map((name) => <option value={name} />)}
+			</datalist>
+		</label>
+
+		<label class="field field--check">
+			<input type="checkbox" data-field="draft" />
+			<span>存为草稿（读者看不到）</span>
+		</label>
+	</div>
+
+	<div class="editor__body">
+		<div class="editor__toolbar" role="toolbar" aria-label="插入 Markdown">
+			{
+				TOOLS.map((tool) => (
+					<button
+						type="button"
+						class="editor__tool"
+						title={tool.title}
+						data-tool={tool.key}
+						aria-label={tool.title}
+					>
+						{tool.label}
+					</button>
+				))
+			}
+			<span class="editor__toolbar-gap"></span>
+			<button type="button" class="editor__tool editor__tool--wide" data-preview-toggle>
+				预览
+			</button>
+		</div>
+
+		<div class="editor__panes" data-panes>
+			<textarea
+				class="editor__source"
+				data-source
+				spellcheck="false"
+				autocomplete="off"
+				aria-label="Markdown 源码"
+			></textarea>
+
+			<aside class="editor__preview" data-preview hidden aria-label="预览">
+				<div class="editor__preview-head">
+					<nav class="editor__outline" data-outline aria-label="目录"></nav>
+					<p class="editor__stats" data-stats></p>
+				</div>
+				{/*
+					`.prose` 是文章页正文的容器类。预览借此复用同一套排版，
+					包括代码块的双主题配色——不复制任何一份样式。
+				*/}
+				<div class="prose" data-preview-body></div>
+			</aside>
+		</div>
+	</div>
+
+	<div class="editor__actions">
+		<button type="button" class="editor__save" data-save>
+			{mode === 'create' ? '发布' : '保存'}
+		</button>
+		<button type="button" class="editor__secondary" data-save-draft>存为草稿并保存</button>
+		<a class="editor__secondary" href="/admin">返回列表</a>
+		<span class="editor__status" data-status role="status"></span>
+	</div>
+
+	<p class="editor__error" data-error role="alert" hidden></p>
+</div>
+
+<script>
+	// 只导入类型：`import type` 在编译后整个消失，不会把 markdown 管线
+	// 拉进首屏 chunk。真正的渲染入口是下面 renderNow 里的动态 import。
+	//
+	// ⚠️ 三个点与两个点的区别在这里是承重的：`shared/` 在**项目根**，
+	// 而 `utils/` 在 **src/ 下**。本文件在 `src/components/admin/`，所以
+	// `../../../shared/...` = `<root>/shared/...` ✓
+	// `../../utils/...`    = `<root>/src/utils/...` ✓
+	// 写成 `../../../utils/...` 会解析到 `<root>/utils/`，构建期报
+	// 「Could not resolve」，而报错信息里看不出是少写了一个 `..`。
+	import type { Heading } from '../../../shared/markdown';
+	import { readingStats } from '../../utils/reading';
+
+	interface Initial {
+		slug: string;
+		title: string;
+		description: string;
+		pubDateRaw: string;
+		updatedDateRaw: string;
+		heroImage: string;
+		draft: boolean;
+		tags: string[];
+		body: string;
+	}
+
+	const root = document.querySelector<HTMLElement>('[data-editor]');
+	if (root) {
+		const mode = root.dataset.mode === 'update' ? 'update' : 'create';
+		const initial: Initial = JSON.parse(root.dataset.post ?? '{}');
+
+		const field = <T extends HTMLElement>(name: string) =>
+			root.querySelector<T>(`[data-field="${name}"]`);
+		const source = root.querySelector<HTMLTextAreaElement>('[data-source]')!;
+		const statusEl = root.querySelector<HTMLElement>('[data-status]')!;
+		const errorEl = root.querySelector<HTMLElement>('[data-error]')!;
+		const preview = root.querySelector<HTMLElement>('[data-preview]')!;
+		const previewBody = root.querySelector<HTMLElement>('[data-preview-body]')!;
+		const outlineEl = root.querySelector<HTMLElement>('[data-outline]')!;
+		const statsEl = root.querySelector<HTMLElement>('[data-stats]')!;
+		const panes = root.querySelector<HTMLElement>('[data-panes]')!;
+
+		// ─────────────────────────────────────── 初始值
+
+		const title = field<HTMLInputElement>('title')!;
+		const slug = field<HTMLInputElement>('slug')!;
+		const description = field<HTMLTextAreaElement>('description')!;
+		const pubDateRaw = field<HTMLInputElement>('pubDateRaw')!;
+		const updatedDateRaw = field<HTMLInputElement>('updatedDateRaw')!;
+		const heroImage = field<HTMLInputElement>('heroImage')!;
+		const tags = field<HTMLInputElement>('tags')!;
+		const draft = field<HTMLInputElement>('draft')!;
+
+		title.value = initial.title;
+		slug.value = initial.slug;
+		description.value = initial.description;
+		pubDateRaw.value = initial.pubDateRaw;
+		updatedDateRaw.value = initial.updatedDateRaw;
+		heroImage.value = initial.heroImage;
+		tags.value = initial.tags.join(', ');
+		draft.checked = initial.draft;
+		source.value = initial.body;
+
+		// ─────────────────────────────────────── slug：新建时从标题生成
+
+		/**
+		 * 只在新建、且用户**还没手动改过** slug 时自动填。
+		 *
+		 * 中文标题slugify 之后是空串（`[a-z0-9]` 之外全被吃掉），所以
+		 * 那种情况下不填、也不覆盖，让下面的提示去告诉用户要自己写。
+		 * 绝不把空串写进去——那会让 `required` 之外多一条要查的路径。
+		 */
+		let slugTouched = mode === 'update' || initial.slug !== '';
+		slug.addEventListener('input', () => {
+			slugTouched = true;
+		});
+		title.addEventListener('input', () => {
+			if (slugTouched) return;
+			const generated = title.value
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, '-')
+				.replace(/^-+|-+$/g, '')
+				.slice(0, 120);
+			if (generated) slug.value = generated;
+		});
+
+		// ─────────────────────────────────────── 工具栏：只插入，不重排
+
+		/**
+		 * 工具栏的行为定义。
+		 *
+		 * 从 `data-tools`（服务端渲染时写进去的那份 `TOOLS`）读，而不是在
+		 * 这里再抄一份：两份清单必然漂移，而漂移的表现是**某个按钮点了没反应
+		 * 且不报错**。现在按钮列表和行为模板是同一个数组的两个视图。
+		 */
+		interface Tool {
+			key: string;
+			label: string;
+			title: string;
+			wrap?: [string, string];
+			line?: string;
+			block?: string;
+		}
+		const tools: Tool[] = JSON.parse(root.dataset.tools ?? '[]');
+		const toolMap = new Map(tools.map((tool) => [tool.key, tool]));
+
+		/**
+		 * 每个动作只做两件事之一：把选区包起来，或者往光标处插入一段文本。
+		 * 都**不重排已有的内容**——这是这个编辑器不使用任何 Markdown 引擎
+		 * 的直接后果，工具栏没有能力改写你没碰过的字节。
+		 *
+		 * `setRangeText` 而不是拼 `value`：它会保留浏览器的撤销栈，
+		 * 也就是 Ctrl+Z 仍然能撤销工具栏插入的内容。
+		 */
+		function applyTool(key: string) {
+			const tool = toolMap.get(key);
+			if (!tool) return; // 只可能是 data-tools 被改坏了
+
+			const start = source.selectionStart;
+			const end = source.selectionEnd;
+			const selected = source.value.slice(start, end);
+
+			if (tool.wrap) {
+				const [before, after] = tool.wrap;
+				source.setRangeText(before + selected + after, start, end, 'select');
+				if (selected === '') {
+					// 没有选中内容时把光标放进包装中间，可以直接开始打字
+					source.selectionStart = start + before.length;
+					source.selectionEnd = start + before.length;
+				}
+			} else {
+				source.setRangeText(tool.line ?? tool.block ?? '', start, end, 'end');
+			}
+
+			source.dispatchEvent(new Event('input', { bubbles: true }));
+			source.focus();
+		}
+
+		for (const button of root.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
+			button.addEventListener('click', () => applyTool(button.dataset.tool ?? ''));
+		}
+
+		// ─────────────────────────────────────── 预览：懒加载 + 单飞 + 防抖
+
+		type Renderer = (markdown: string) => Promise<{ html: string; headings: Heading[] }>;
+
+		/**
+		 * 渲染入口。**第一次要用的时候才去下载那 1.4 MB**——静态 import 会让
+		 * Vite 把它并进首屏 chunk，那样"懒加载"就只是句注释。`??=` 之后的
+		 * 每次调用都命中同一个模块实例（ESM 模块图本来就只求值一次），
+		 * 真正省下的是网络往返，不是模块求值。
+		 */
+		let renderer: Renderer | null = null;
+		let rendering = false;
+		let dirty = true;
+		let timer: number | undefined;
+
+		/** 最近一次渲染的结果。保存时直接用它，不重算。 */
+		let last: { html: string; headingsJson: string } | null = null;
+
+		async function renderNow() {
+			if (rendering) return; // 同一时刻只允许一次，见文件头
+			rendering = true;
+			try {
+				renderer ??= (await import('../../../shared/markdown')).renderMarkdown;
+				const { html, headings } = await renderer(source.value);
+
+				last = { html, headingsJson: JSON.stringify(headings) };
+				dirty = false;
+
+				if (!preview.hidden) {
+					// 全文件唯一的 innerHTML 赋值。
+					//
+					// 为什么是安全的：输入是博主自己的正文，产出走
+					// `rehype-stringify`（它只输出 HTML 字符串，不执行任何东西）。
+					//
+					// ⚠️ 但 `allowDangerousHtml` 是**开着**的
+					// （`shared/markdown.ts` 两处 `true`），所以正文里的原始
+					// HTML 会原样穿过管线——`<img onerror=…>` 这类会在预览
+					// 面板里执行。文章页的 `set:html` 行为完全相同，所以
+					// 预览与线上一致。单作者场景下这是自己的内容在自己的
+					// 后台里；写出来是为了不假装它被转义了。
+					previewBody.innerHTML = html;
+					renderOutline(headings);
+					const stats = readingStats(source.value);
+					statsEl.textContent = `${stats.words} 字 · 约 ${stats.minutes} 分钟`;
+				}
+			} catch (err) {
+				// 渲染失败不能静默：`bodyHtml` 是发布时的必填项，
+				// 悄悄用上一次的结果会让"预览是旧的"变成一个查不出的问题。
+				last = null;
+				showError(`渲染失败：${err instanceof Error ? err.message : String(err)}`);
+			} finally {
+				rendering = false;
+			}
+		}
+
+		function renderOutline(headings: { depth: number; slug: string; text: string }[]) {
+			outlineEl.replaceChildren();
+			if (headings.length === 0) return;
+			for (const heading of headings) {
+				const a = document.createElement('a');
+				a.href = `#${heading.slug}`;
+				a.textContent = heading.text;
+				a.style.paddingLeft = `${(heading.depth - 2) * 0.75}rem`;
+				a.addEventListener('click', (event) => {
+					event.preventDefault();
+					// 预览面板里的锚点跳转：先在渲染出来的 HTML 里找那个 id。
+					// 用 querySelector 而不是 location.hash——后者会改地址栏，
+					// 而这个面板只是预览。
+					const target = previewBody.querySelector(`#${CSS.escape(heading.slug)}`);
+					target?.scrollIntoView({ block: 'start' });
+				});
+				outlineEl.append(a);
+			}
+		}
+
+		/** 900ms 防抖。`input` 回调里只做这件事。 */
+		function schedule() {
+			dirty = true;
+			window.clearTimeout(timer);
+			timer = window.setTimeout(renderNow, 900);
+		}
+
+		source.addEventListener('input', schedule);
+
+		root.querySelector('[data-preview-toggle]')?.addEventListener('click', async () => {
+			if (preview.hidden) {
+				preview.hidden = false;
+				panes.classList.add('editor__panes--split');
+				// 首次打开时才加载 Shiki（约 1.4 MB）。这样键盘延迟
+				// 与这笔下载完全无关——不打开预览就永远不下载。
+				await renderNow();
+			} else {
+				preview.hidden = true;
+				panes.classList.remove('editor__panes--split');
+			}
+		});
+
+		// ─────────────────────────────────────── 本地备份
+
+		/**
+		 * key 与任何引擎自己的缓存无关——本项目**没有**引擎。
+		 * 前缀 `blog:draft:` 是为了将来万一加了别的本地存储时不撞。
+		 *
+		 * `__new__` 给还没发布的新文章用：那一刻还没有 slug。
+		 */
+		const draftKey = `blog:draft:${mode === 'update' ? initial.slug : '__new__'}`;
+		const BACKUP_DELAY = 3000;
+
+		function readBackup(): string | null {
+			try {
+				return localStorage.getItem(draftKey);
+			} catch {
+				// 隐私模式下 localStorage 会抛。静默降级——没有备份也能写。
+				return null;
+			}
+		}
+
+		function writeBackup() {
+			try {
+				localStorage.setItem(
+					draftKey,
+					JSON.stringify({ at: Date.now(), body: source.value, title: title.value }),
+				);
+			} catch {
+				/* 存不下就算了 */
+			}
+		}
+
+		function clearBackup() {
+			try {
+				localStorage.removeItem(draftKey);
+			} catch {
+				/* 同上 */
+			}
+		}
+
+		let backupTimer: number | undefined;
+		source.addEventListener('input', () => {
+			window.clearTimeout(backupTimer);
+			backupTimer = window.setTimeout(writeBackup, BACKUP_DELAY);
+		});
+
+		// 残留备份的横幅。**绝不自动恢复**：拿旧备份自动覆盖服务端内容，
+		// 是丢失工作的经典方式。让用户看着两份内容自己决定。
+		const banner = root.querySelector<HTMLElement>('[data-restore-banner]')!;
+		const backup = readBackup();
+		if (backup) {
+			try {
+				const saved = JSON.parse(backup) as { body?: string; at?: number };
+				if (saved.body && saved.body !== initial.body) {
+					root.querySelector<HTMLElement>('[data-restore-text]')!.textContent =
+						`上次有未保存的改动（${new Date(saved.at ?? Date.now()).toLocaleString('zh-CN')}）。`;
+					banner.hidden = false;
+
+					root.querySelector('[data-restore]')?.addEventListener('click', () => {
+						source.value = saved.body ?? '';
+						source.dispatchEvent(new Event('input', { bubbles: true }));
+						banner.hidden = true;
+					});
+					root.querySelector('[data-discard]')?.addEventListener('click', () => {
+						clearBackup();
+						banner.hidden = true;
+					});
+				}
+			} catch {
+				// 备份坏了就当它不存在，并且清掉，免得每次都弹
+				clearBackup();
+			}
+		}
+
+		// ─────────────────────────────────────── 保存
+
+		function showError(message: string) {
+			errorEl.textContent = message;
+			errorEl.hidden = false;
+		}
+
+		function setStatus(message: string) {
+			statusEl.textContent = message;
+		}
+
+		/** `YYYY-MM-DD` → 原样返回；空串 → null。日期真实性的检查在服务端。 */
+		const orNull = (value: string) => (value.trim() === '' ? null : value.trim());
+
+		async function save(options: { forceDraft?: boolean } = {}) {
+			errorEl.hidden = true;
+
+			if (options.forceDraft) draft.checked = true;
+
+			// 这一处**必须**等服务端认识的那份 HTML：`bodyHtml` 是必填，
+			// 而它只能由 `shared/markdown.ts` 产出。所以保存时如果还没渲染过
+			// （比如没打开预览面板），就地渲染一次。
+			//
+			// `dirty` 为真说明正文在上次渲染之后改过——此时 `last` 是旧的，
+			// 用它等于把上一次的内容发布出去，而且不报错。
+			if (dirty || !last) await renderNow();
+			if (!last) return; // renderNow 已经报过错
+
+			const payload = {
+				slug: slug.value.trim(),
+				title: title.value,
+				description: description.value,
+				pubDateRaw: pubDateRaw.value,
+				updatedDateRaw: orNull(updatedDateRaw.value),
+				heroImage: orNull(heroImage.value),
+				draft: draft.checked,
+				body: source.value,
+				bodyHtml: last.html,
+				headingsJson: last.headingsJson,
+				...readingStats(source.value),
+				tags: tags.value
+					.split(',')
+					.map((t) => t.trim())
+					.filter((t) => t !== ''),
+				categories: [] as string[],
+			};
+
+			const url =
+				mode === 'create' ? '/api/admin/posts' : `/api/admin/posts/${encodeURIComponent(slug.value.trim())}`;
+
+			const button = root.querySelector<HTMLButtonElement>('[data-save]')!;
+			button.disabled = true;
+			setStatus('保存中…');
+
+			try {
+				const res = await fetch(url, {
+					method: mode === 'create' ? 'POST' : 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload),
+				});
+
+				if (res.ok) {
+					clearBackup();
+					if (mode === 'create') {
+						// 新建成功后换到编辑模式的地址：直接刷新这个页面会让
+						// `mode` 还是 create，再点一次发布就变成新建第二篇。
+						location.href = `/admin/posts/${encodeURIComponent(payload.slug)}`;
+						return;
+					}
+					setStatus(payload.draft ? '已保存（草稿）' : '已保存');
+					return;
+				}
+
+				// ⚠️ 这里**必须**判 `res.ok`。
+				//
+				// 未登录时中间件返回**401 JSON**（不是 302 到登录页），
+				// 正是为了让这条路径能看见失败——返回 302 的话 `fetch`
+				// 会跟随重定向拿到一个 200 的登录页 HTML，
+				// 编辑器会以为保存成功。这是本项目最忌讳的那类
+				// 「不报错，只是内容悄悄没保存」。
+				const data = (await res.json().catch(() => null)) as { error?: string } | null;
+
+				if (res.status === 401) {
+					location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+					return;
+				}
+
+				showError(data?.error ?? `保存失败（HTTP ${res.status}）。`);
+				setStatus('');
+			} catch {
+				// 网络断了。**不清除本地备份**——正文还在，留在 localStorage 里。
+				showError('保存请求没有发出去。内容已经备份在这个浏览器里，刷新后可以恢复。');
+				setStatus('');
+			} finally {
+				button.disabled = false;
+			}
+		}
+
+		root.querySelector('[data-save]')?.addEventListener('click', () => void save());
+		root.querySelector('[data-save-draft]')?.addEventListener('click', () =>
+			void save({ forceDraft: true }),
+		);
+
+		// Ctrl/Cmd+S。浏览器默认是"保存网页"，必须拦掉。
+		document.addEventListener('keydown', (event) => {
+			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+				event.preventDefault();
+				void save();
+			}
+		});
+
+		// 有未保存的改动时离开要拦一下。只看正文——标题等字段的改动
+		// 由备份横幅兜底，为它们也拦一次会让"点返回列表"变得很烦。
+		window.addEventListener('beforeunload', (event) => {
+			if (dirty) event.preventDefault();
+		});
+
+		// 首屏渲染一次，让"没打开预览就保存"不必等一次 1.4 MB 的下载——
+		// `renderNow` 会用 HTTP 缓存，且此时用户的注意力还在正文上。
+		void renderNow();
+	}
+</script>
+
+<style>
+	.editor {
+		display: grid;
+		gap: 1.25rem;
+	}
+	.editor__banner {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.6rem 0.9rem;
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--r-md);
+		font-size: 0.85rem;
+	}
+	.editor__banner button {
+		padding: 0.2rem 0.6rem;
+		color: var(--fg);
+		background: none;
+		border: 1px solid var(--border);
+		border-radius: var(--r-sm);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.editor__meta {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 0.75rem 1rem;
+	}
+	.field {
+		display: grid;
+		gap: 0.25rem;
+	}
+	.field--wide {
+		grid-column: 1 / -1;
+	}
+	.field--check {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		grid-column: 1 / -1;
+	}
+	.field__label {
+		color: var(--fg-muted);
+		font-size: 0.8rem;
+	}
+	.field__note {
+		margin-left: 0.4rem;
+		color: var(--fg-subtle);
+		font-size: 0.75rem;
+		font-style: normal;
+	}
+	.field input[type='text'],
+	.field input[type='date'],
+	.field textarea {
+		padding: 0.45rem 0.6rem;
+		font: inherit;
+		color: var(--fg);
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-radius: var(--r-md);
+	}
+	.field input[readonly] {
+		color: var(--fg-muted);
+		cursor: not-allowed;
+	}
+	.field input:focus-visible,
+	.field textarea:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
+	.editor__toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 2px;
+		padding: 0.3rem;
+		background-color: var(--bg-subtle);
+		border: 1px solid var(--border);
+		border-bottom: none;
+		border-radius: var(--r-md) var(--r-md) 0 0;
+	}
+	.editor__tool {
+		min-width: 1.9rem;
+		height: 1.9rem;
+		padding: 0 0.4rem;
+		color: var(--fg-muted);
+		background: none;
+		border: none;
+		border-radius: var(--r-sm);
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.editor__tool:hover {
+		color: var(--fg);
+		background-color: var(--bg);
+	}
+	.editor__tool--wide {
+		font-size: 0.8rem;
+	}
+	.editor__toolbar-gap {
+		flex: 1;
+	}
+
+	.editor__panes {
+		display: grid;
+		gap: 0;
+	}
+	.editor__panes--split {
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+	.editor__source {
+		width: 100%;
+		min-height: 30rem;
+		padding: 0.9rem;
+		color: var(--fg);
+		background-color: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: 0 0 var(--r-md) var(--r-md);
+		font-family: var(--font-mono);
+		font-size: 0.9rem;
+		line-height: 1.7;
+		resize: vertical;
+		tab-size: 2;
+	}
+	.editor__panes--split .editor__source {
+		border-radius: var(--r-md);
+	}
+	.editor__source:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
+	.editor__preview {
+		min-width: 0;
+		max-height: 60rem;
+		overflow: auto;
+		padding: 0 0.9rem;
+		border: 1px solid var(--border);
+		border-radius: var(--r-md);
+	}
+	.editor__preview-head {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		display: grid;
+		gap: 0.3rem;
+		padding: 0.6rem 0;
+		background-color: var(--bg);
+		border-bottom: 1px solid var(--border);
+	}
+	.editor__outline {
+		display: grid;
+		gap: 0.1rem;
+		font-size: 0.8rem;
+	}
+	.editor__outline a {
+		color: var(--fg-muted);
+		text-decoration: none;
+	}
+	.editor__outline a:hover {
+		color: var(--fg);
+	}
+	.editor__stats {
+		margin: 0;
+		color: var(--fg-subtle);
+		font-size: 0.75rem;
+	}
+
+	.editor__actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.editor__save,
+	.editor__secondary {
+		padding: 0.45rem 0.9rem;
+		font: inherit;
+		border-radius: var(--r-md);
+		cursor: pointer;
+	}
+	.editor__save {
+		color: var(--bg);
+		background-color: var(--fg);
+		border: 1px solid var(--fg);
+		font-weight: 600;
+	}
+	.editor__save:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.editor__secondary {
+		color: var(--fg);
+		background: none;
+		border: 1px solid var(--border);
+		text-decoration: none;
+	}
+	.editor__status {
+		color: var(--fg-muted);
+		font-size: 0.85rem;
+	}
+	.editor__error {
+		margin: 0;
+		color: var(--danger, #c0392b);
+		font-size: 0.85rem;
+		line-height: 1.6;
+	}
+</style>

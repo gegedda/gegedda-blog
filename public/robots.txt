@@ -1,5 +1,12 @@
 User-agent: *
 Allow: /
 
-# 站点地址变更时需同步更新（同时改 astro.config.mjs 的 site）
+# Admin and login: keep crawlers out. This is NOT the same thing as keeping
+# these pages out of search results -- that is what the `X-Robots-Tag:
+# noindex, nofollow` response header (set in src/middleware.ts) is for.
+# Different semantics, so both are needed.
+Disallow: /admin/
+Disallow: /login
+
+# Update on domain change (also astro.config.mjs `site`).
 Sitemap: https://gegedda-blog.pages.dev/sitemap-index.xml

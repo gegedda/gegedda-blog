@@ -1,0 +1,53 @@
+---
+/**
+ * `/admin/new` —— 新建文章。
+ *
+ * ── 为什么是 `/admin/new`，不是 `/admin/posts/new` ──────────────
+ *
+ * Astro 的路由里静态段胜过动态段，所以 `/admin/posts/new` 会**永远**
+ * 命中"新建"页。后果是一篇 slug 恰好是 `new` 的文章再也打不开编辑页——
+ * 而且不报错，只是那个 URL 永远显示一个空表单，看起来像"我的编辑页坏了"。
+ *
+ * `/admin/new` 与 `/admin/posts/[slug]` 之间没有任何段重叠，这个歧义在
+ * 结构上就不存在。
+ *
+ * ── 会话一定存在 ──────────────────────────────────────────────
+ *
+ * 与 `/admin` 同：走到这里说明中间件已经验过签。断言而不是静默降级，
+ * 是为了让"中间件白名单被改错"变成一个 500，而不是一个渲染给未登录
+ * 访客的后台页面。
+ */
+
+import PostEditor from '../../components/admin/PostEditor.astro';
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { listTagNames } from '../../data/posts.repo';
+import { getDb } from '../../lib/db';
+
+const admin = Astro.locals.admin;
+if (!admin) throw new Error('中间件没有注入会话：/admin/new 必须经过鉴权分支');
+
+// 标签候选。含只被草稿用过的标签——后台要的是"我写过哪些"。
+const tagNames = await listTagNames(getDb());
+---
+
+<AdminLayout title="新建文章" current="new">
+	<div class="admin-head">
+		<h1 class="admin-head__title">新建文章</h1>
+	</div>
+
+	{/*
+		不带 `post`：create 模式下编辑器不读它。日期默认值是编辑器自己填的
+		（`todayDateRaw()`，上海时区），所以这里也不用传。
+	*/}
+	<PostEditor mode="create" tagNames={tagNames} />
+</AdminLayout>
+
+<style>
+	.admin-head {
+		margin-bottom: 1.25rem;
+	}
+	.admin-head__title {
+		margin: 0;
+		font-size: 1.4rem;
+	}
+</style>

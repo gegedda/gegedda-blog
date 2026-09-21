@@ -1,0 +1,247 @@
+---
+/**
+ * `/admin/setup` —— 首次设置后台口令。**只能设一次。**
+ *
+ * 已经设过之后这个页面返回 **404**，而且状态码是这条规则的全部意义：
+ * 一个 200 的「已经设置过了」页会让人以为还有一个可以再设一次的表单，
+ * 而对扫描器来说它是一张写着"这里有个后台"的名片。
+ *
+ * ── 关于"两次输入"─────────────────────────────────────────────
+ *
+ * 要求两次输入一致，是因为这个页面**没有找回途径**：忘了口令只能去
+ * `wrangler d1 execute` 删掉那一行重来（部署指南里有命令）。敲错一个字符
+ * 就要走一遍那个流程，代价远大于多填一个框。
+ *
+ * ── ⚠️ 一个没有技术解法的暴露窗口 ─────────────────────────────
+ *
+ * 这个页面在"还没设密码"时对公网开放（否则没法设密码）。也就是
+ * **从部署完成到第一次访问这里之间，任何知道地址的人都能抢先设一个口令**，
+ * 之后真正的博主就再也设不了了（他会看到 404）。
+ *
+ * 单作者博客没有第二个身份来源，所以这不是实现缺陷。缓解办法只有一个：
+ * 部署完立刻来设置。部署指南里写了这一条。
+ */
+
+import NotFound from '../../components/NotFound.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { SITE_TITLE } from '../../consts';
+import { PBKDF2_ITERATIONS, parsePasswordHash, randomHex } from '../../lib/auth';
+import { getDb } from '../../lib/db';
+import { getPasswordHashRaw } from '../../lib/settings';
+
+const notFound = parsePasswordHash(await getPasswordHashRaw(getDb())) !== null;
+
+// 404 而不是 403：不告诉访问者"这里有东西、只是你没权限"。
+//
+// ⚠️ **不能用 `Astro.rewrite('/404')` 来代替下面那个分支。** 它渲染出来的
+// 是同一个页面，但状态码被强制设回 200（`[...page].astro` 的注释里记了
+// 这个坑的出处）。那样这个页面看着完全正常，而"已经设过密码"就从
+// "看不见"变成了"看得见"——这个页面存在的全部理由就是那个状态码。
+if (notFound) {
+	Astro.response.status = 404;
+}
+
+// 盐由**服务端**生成后内联。客户端自己生成也行（盐不是秘密），
+// 但让服务端出这个值，和 `/login` 从库里读盐是同一种形状——
+// 少一种"谁生成"的分支，就少一处将来会分岔的地方。
+const salt = randomHex(16);
+---
+
+{
+	notFound ? (
+		<NotFound />
+	) : (
+		<BaseLayout title={`设置后台口令 · ${SITE_TITLE}`} noindex>
+			<main id="main" class="gate">
+				<h1 class="gate__title">设置后台口令</h1>
+				<p class="gate__lead">
+					派生（PBKDF2-SHA256，60 万轮）在浏览器里完成，服务端收到的只是派生结果，
+					<strong>原始口令不会离开这台机器</strong>。
+				</p>
+				<p class="gate__lead gate__lead--warn">
+					设好之后没有找回途径：忘记了只能按部署指南里的步骤删掉数据库里那一行再来一次。
+					请用密码管理器存好。
+				</p>
+
+				<form
+					class="gate__form"
+					data-setup
+					data-salt={salt}
+					data-iterations={PBKDF2_ITERATIONS}
+				>
+					<label class="gate__label" for="passphrase">
+						口令（至少 8 个字符）
+					</label>
+					<input
+						class="gate__input"
+						id="passphrase"
+						name="passphrase"
+						type="password"
+						autocomplete="new-password"
+						minlength="8"
+						required
+						autofocus
+					/>
+
+					<label class="gate__label" for="confirm">再输一遍</label>
+					<input
+						class="gate__input"
+						id="confirm"
+						name="confirm"
+						type="password"
+						autocomplete="new-password"
+						minlength="8"
+						required
+					/>
+
+					<button class="gate__submit" type="submit">设置并进入后台</button>
+
+					<p class="gate__error" role="alert" data-error hidden />
+				</form>
+
+				<noscript>
+					<p class="gate__error">
+						这个页面需要 JavaScript：口令的派生在浏览器里完成，服务端只收到派生结果。
+					</p>
+				</noscript>
+			</main>
+
+			<script>
+				import { deriveVerifier } from '../../lib/auth';
+
+				const form = document.querySelector<HTMLFormElement>('[data-setup]');
+				const input = form?.querySelector<HTMLInputElement>('#passphrase');
+				const confirm = form?.querySelector<HTMLInputElement>('#confirm');
+				const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+				const error = form?.querySelector<HTMLElement>('[data-error]');
+
+				function showError(message: string) {
+					if (!error) return;
+					error.textContent = message;
+					error.hidden = false;
+				}
+
+				form?.addEventListener('submit', async (event) => {
+					event.preventDefault();
+					if (!form || !input || !confirm || !submit) return;
+					if (error) error.hidden = true;
+
+					// 服务端**不检查口令长度**——它收到的是 verifier，长度和口令长度无关。
+					// 所以长度这条规则只有这里一处，`minlength` 只是表单层面的提示，
+					// 这里再判一次是因为密码管理器/脚本可以绕过它。
+					if (input.value.length < 8) {
+						showError('口令至少 8 个字符。');
+						return;
+					}
+					if (input.value !== confirm.value) {
+						showError('两次输入的口令不一样。');
+						confirm.value = '';
+						confirm.focus();
+						return;
+					}
+
+					const salt = form.dataset.salt;
+					const iterations = Number(form.dataset.iterations);
+					if (!salt || !Number.isFinite(iterations)) {
+						showError('页面上的参数缺失，请刷新重试。');
+						return;
+					}
+
+					submit.disabled = true;
+					const label = submit.textContent;
+					submit.textContent = '计算中…';
+
+					try {
+						const verifier = await deriveVerifier(input.value, salt, iterations);
+
+						const res = await fetch('/api/admin/setup', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({ salt, iterations, verifier }),
+						});
+
+						if (res.ok) {
+							// 接口成功时就签好了会话，所以直接进后台，不用再登录一次。
+							location.href = '/admin';
+							return;
+						}
+
+						const data = (await res.json().catch(() => null)) as {
+							error?: string;
+						} | null;
+						showError(data?.error ?? `设置失败（HTTP ${res.status}）。`);
+					} catch {
+						showError('设置请求没有完成。请检查网络后重试。');
+					} finally {
+						submit.disabled = false;
+						if (label) submit.textContent = label;
+					}
+				});
+			</script>
+
+			<style>
+				.gate {
+					max-width: 24rem;
+					margin: 10vh auto 0;
+					padding: 0 1rem;
+				}
+				.gate__title {
+					margin: 0 0 0.5rem;
+					font-size: 1.5rem;
+				}
+				.gate__lead {
+					margin: 0 0 1rem;
+					color: var(--fg-muted);
+					font-size: 0.9rem;
+					line-height: 1.7;
+				}
+				.gate__lead--warn {
+					color: var(--fg);
+				}
+				.gate__form {
+					display: grid;
+					gap: 0.6rem;
+					margin-top: 1.5rem;
+				}
+				.gate__label {
+					font-size: 0.85rem;
+					color: var(--fg-muted);
+				}
+				.gate__label:not(:first-child) {
+					margin-top: 0.4rem;
+				}
+				.gate__input,
+				.gate__submit {
+					padding: 0.55rem 0.75rem;
+					font: inherit;
+					color: var(--fg);
+					background-color: var(--bg-subtle);
+					border: 1px solid var(--border);
+					border-radius: var(--r-md);
+				}
+				.gate__input:focus-visible,
+				.gate__submit:focus-visible {
+					outline: 2px solid var(--accent);
+					outline-offset: 1px;
+				}
+				.gate__submit {
+					margin-top: 0.6rem;
+					color: var(--bg);
+					background-color: var(--fg);
+					border-color: var(--fg);
+					cursor: pointer;
+				}
+				.gate__submit:disabled {
+					opacity: 0.6;
+					cursor: default;
+				}
+				.gate__error {
+					margin: 0;
+					color: var(--danger, #c0392b);
+					font-size: 0.85rem;
+					line-height: 1.6;
+				}
+			</style>
+		</BaseLayout>
+	)
+}
