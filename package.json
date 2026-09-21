@@ -14,22 +14,33 @@
     "content:to-sql": "node scripts/content-to-sql.mjs",
     "content:to-md": "node scripts/db-to-content.mjs",
     "verify:roundtrip": "node scripts/roundtrip-verify.mjs",
-    "verify": "npm run build && npm run test && npm run verify:roundtrip"
+    "verify:render": "node scripts/render-check.mjs",
+    "verify": "npm run build && npm run test && npm run verify:roundtrip && npm run verify:render"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "14.3.2",
     "@astrojs/mdx": "^8.0.1",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.4",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.3.3",
+    "github-slugger": "^2.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
     "sharp": "^0.35.0",
-    "tailwindcss": "^4.3.3"
+    "shiki": "^4.4.3",
+    "tailwindcss": "^4.3.3",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
   },
   "allowScripts": {
     "esbuild": true
   },
   "devDependencies": {
     "js-yaml": "^5.4.2",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "wrangler": "4.135.0"
   }
 }

@@ -15,6 +15,16 @@
  * 幂等：用的是 UPSERT 而不是 INSERT OR REPLACE。后者在 SQLite 里等于
  * DELETE + INSERT，会顺带触发 post_tags 的 ON DELETE CASCADE —— 标签会被清掉，
  * 而且没有任何报错。
+ *
+ * 这里**顺带把缓存列算出来**（body_html / headings_json / words / minutes）。
+ *
+ * 为什么放在导入路径上而不是单独一个回填脚本：运行时的 Worker 每次请求只有
+ * 10ms CPU，读路径必须直接取现成的 body_html，没有余量现场渲染；而"记得要跑
+ * 回填"是一个迟早会被忘掉的步骤，忘了的表现是文章页空白而不是报错。
+ *
+ * 用的渲染管线就是 shared/markdown.ts —— **和浏览器端同一份文件**，
+ * 所以导入时的产出与后台预览、与读者看到的必然一致，不存在第二套实现漂移。
+ * Node 24 的类型剥离让 .mjs 可以直接 import 这个 .ts。
  */
 
 import fs from 'node:fs';
@@ -24,6 +34,8 @@ import { fileURLToPath } from 'node:url';
 import { parsePostFile, dateRawToUtc } from './lib/frontmatter.mjs';
 import { lit, cols, vals } from './lib/sql.mjs';
 import { tagSegment } from '../src/utils/tag-segment.ts';
+import { readingStats } from '../src/utils/reading.ts';
+import { renderMarkdown } from '../shared/markdown.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -38,8 +50,8 @@ function parseArgs(argv) {
 	return opts;
 }
 
-/** 读一篇 .md，拆成 posts 行需要的数据 */
-function readPost(file) {
+/** 读一篇 .md，拆成 posts 行需要的数据（含渲染好的缓存列） */
+async function readPost(file) {
 	const text = fs.readFileSync(file, 'utf8');
 	const { frontmatter: fm, body } = parsePostFile(text);
 
@@ -53,6 +65,11 @@ function readPost(file) {
 		}
 	}
 
+	// 渲染缓存列。headings 直接用 shared 的产出，形状与 src/utils/toc.ts 的
+	// Heading 一致，所以读路径可以原样 JSON.parse 后喂给目录组件。
+	const { html, headings } = await renderMarkdown(body);
+	const { words, minutes } = readingStats(body);
+
 	return {
 		slug,
 		title: String(fm.title),
@@ -64,20 +81,41 @@ function readPost(file) {
 		heroImage: fm.heroImage == null ? null : String(fm.heroImage),
 		draft: fm.draft === true,
 		body,
+		bodyHtml: html,
+		headingsJson: JSON.stringify(headings),
+		words,
+		minutes,
 		tags: Array.isArray(fm.tags) ? fm.tags.map((t) => String(t).trim()).filter(Boolean) : [],
 		categories: Array.isArray(fm.categories) ? fm.categories.map((t) => String(t)) : [],
 	};
 }
 
+// 顺序与 migrations/0001_init.sql 里的列顺序一致，便于对照。
+// 加列时**必须同时**改 valuesFor()，两处错位的表现是数据被静默写进错误的列。
 const POST_COLUMNS = [
 	'slug', 'title', 'description',
 	'pub_date_raw', 'pub_date_utc',
 	'updated_date_raw', 'updated_date_utc',
-	'hero_image', 'draft', 'body', 'categories_json',
+	'hero_image', 'draft', 'body',
+	'body_html', 'headings_json', 'words', 'minutes',
+	'categories_json',
 	'created_at', 'updated_at',
 ];
 
-function main() {
+/** 与 POST_COLUMNS 一一对应。写成函数是为了让它紧跟列定义，改一处就看得见另一处。 */
+function valuesFor(p, now) {
+	return [
+		p.slug, p.title, p.description,
+		p.pubDateRaw, p.pubDateUtc,
+		p.updatedDateRaw, p.updatedDateUtc,
+		p.heroImage, p.draft, p.body,
+		p.bodyHtml, p.headingsJson, p.words, p.minutes,
+		JSON.stringify(p.categories),
+		now, now,
+	];
+}
+
+async function main() {
 	const { src, out } = parseArgs(process.argv.slice(2));
 
 	const srcDir = path.resolve(ROOT, src);
@@ -97,7 +135,13 @@ function main() {
 		throw new Error(`${srcDir} 里没有找到任何 .md 文件`);
 	}
 
-	const posts = files.map((f) => readPost(path.join(srcDir, f)));
+	// 串行而不是 Promise.all：shiki 的 highlighter 是惰性单例，第一次调用要把
+	// 主题和语法定义读进来，并发反而让首篇之后的几篇一起等同一个 promise。
+	// 顺序 await 让输出顺序与 files 的排序一致，报错时也知道卡在哪一篇。
+	const posts = [];
+	for (const f of files) {
+		posts.push(await readPost(path.join(srcDir, f)));
+	}
 	const now = Date.now();
 
 	const lines = [
@@ -108,13 +152,7 @@ function main() {
 	];
 
 	for (const p of posts) {
-		const values = [
-			p.slug, p.title, p.description,
-			p.pubDateRaw, p.pubDateUtc,
-			p.updatedDateRaw, p.updatedDateUtc,
-			p.heroImage, p.draft, p.body, JSON.stringify(p.categories),
-			now, now,
-		];
+		const values = valuesFor(p, now);
 		const updatable = POST_COLUMNS.filter((c) => c !== 'slug' && c !== 'created_at');
 
 		lines.push(
@@ -173,7 +211,16 @@ function main() {
 		const flag = p.draft ? ' [草稿]' : '';
 		const tags = p.tags.length ? `  标签: ${p.tags.join(', ')}` : '';
 		console.log(`    ${p.slug}  ${p.pubDateRaw}${flag}${tags}`);
+		// 缓存列一并报出来：0 字或 0 标题都是"渲染管线没跑起来"的早期信号，
+		// 在这里看得见，就不用等到读者打开文章发现是空白页。
+		console.log(
+			`      html ${p.bodyHtml.length}B  标题 ${JSON.parse(p.headingsJson).length} 个` +
+				`  ${p.words} 字 / ${p.minutes} 分钟`,
+		);
 	}
 }
 
-main();
+main().catch((err) => {
+	console.error(err.message ?? err);
+	process.exit(1);
+});

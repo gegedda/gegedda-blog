@@ -1,0 +1,64 @@
+<p>这个博客从零搭建的过程，本身就是一篇值得记录的文章。这篇文章记录当前的技术方案与工作流。</p>
+<h2 id="技术栈">技术栈</h2>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>选择</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>站点框架</td>
+<td>Astro</td>
+<td>静态生成，默认零 JS，性能好</td>
+</tr>
+<tr>
+<td>内容</td>
+<td>Markdown + MDX</td>
+<td>本地文件，随 Git 版本管理</td>
+</tr>
+<tr>
+<td>代码高亮</td>
+<td>Shiki</td>
+<td>Astro 内置支持</td>
+</tr>
+<tr>
+<td>托管</td>
+<td>Cloudflare Pages</td>
+<td>免费、全球 CDN，Git push 自动部署</td>
+</tr>
+<tr>
+<td>评论 / 搜索 / 统计</td>
+<td>规划中</td>
+<td>上线后按需接入</td>
+</tr>
+</tbody>
+</table>
+<h2 id="项目结构">项目结构</h2>
+<pre class="astro-code astro-code-themes vitesse-light vitesse-dark" style="--shiki-light:#393a34;--shiki-dark:#dbd7caee;--shiki-light-bg:#ffffff;--shiki-dark-bg:#121212; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>blog/</span></span>
+<span class="line"><span>├── src/</span></span>
+<span class="line"><span>│   ├── content/blog/   # 文章（Markdown）</span></span>
+<span class="line"><span>│   ├── layouts/        # 页面布局</span></span>
+<span class="line"><span>│   ├── components/     # 组件（导航、页脚等）</span></span>
+<span class="line"><span>│   ├── pages/          # 路由页面</span></span>
+<span class="line"><span>│   ├── consts.ts       # 站点全局配置</span></span>
+<span class="line"><span>│   └── styles/         # 全局样式</span></span>
+<span class="line"><span>├── astro.config.mjs    # Astro 配置</span></span>
+<span class="line"><span>└── package.json</span></span></code></pre>
+<h2 id="写作与发布流程">写作与发布流程</h2>
+<ol>
+<li>在 <code>src/content/blog/</code> 新建 Markdown 文件，填写 frontmatter（标题、日期、描述等）</li>
+<li>本地预览：<code>npm run dev</code></li>
+<li>推送 Git：<code>git push</code>，Cloudflare Pages 自动构建上线</li>
+</ol>
+<h2 id="后续计划">后续计划</h2>
+<ul class="contains-task-list">
+<li class="task-list-item"><input type="checkbox" disabled> 标签与分类系统</li>
+<li class="task-list-item"><input type="checkbox" disabled> 站内搜索（Pagefind）</li>
+<li class="task-list-item"><input type="checkbox" disabled> 评论系统</li>
+<li class="task-list-item"><input type="checkbox" disabled> 访问统计</li>
+<li class="task-list-item"><input type="checkbox" disabled> 自定义域名</li>
+</ul>
+<p>这个列表会持续更新，具体进度可以看首页的更新。</p>

@@ -158,22 +158,13 @@ export function serializePostFile(frontmatter, body) {
 }
 
 /**
- * frontmatter 里的日期原文 → 用于 ORDER BY 的 epoch 毫秒。
+ * 日期原文 → epoch 毫秒。**实现已搬到 `src/utils/date-raw.ts`**，这里只做转发。
  *
- * 只服务排序，不参与任何显示或分组：分组一律走 src/utils/posts.ts 里
- * 那三段 Asia/Shanghai 的 Intl.DateTimeFormat。
+ * 搬家的理由：P5 的写接口（Worker 代码）也要用它，而 Worker 不能引
+ * 这个文件——它顶层 import 了 js-yaml，那是个 devDependency。
+ * `src/utils/` 是"两端都能引"的地方，`tag-segment.ts` / `reading.ts` 已经在那儿。
  *
- * 之所以要显式校验：Date.parse 对无法识别的输入返回 NaN 而**不抛错**，
- * NaN 插进 INTEGER 列会变成 NULL，表现为「这篇文章莫名其妙排到最后」。
+ * 保留这行 re-export 是为了让 `content-to-sql.mjs` 等处的 import 一个字都不用改，
+ * 同时保证**全项目只有一份实现**——写第二遍的表现是某些文章的排序悄悄不对。
  */
-export function dateRawToUtc(raw) {
-  if (typeof raw !== 'string' && !(raw instanceof Date)) {
-    throw new Error(`日期必须是字符串，收到 ${typeof raw}`);
-  }
-  const value = raw instanceof Date ? raw.toISOString() : raw;
-  const ms = Date.parse(value);
-  if (Number.isNaN(ms)) {
-    throw new Error(`无法解析的日期：${JSON.stringify(raw)}`);
-  }
-  return ms;
-}
+export { dateRawToUtc } from '../../src/utils/date-raw.ts';
