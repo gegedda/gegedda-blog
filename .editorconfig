@@ -1,0 +1,33 @@
+# 统一编辑器行为，防止编码与换行在不同机器、不同编辑器之间漂移。
+#
+# VS Code 内置支持 EditorConfig，不需要装扩展；其它编辑器可能需要插件。
+# 这里写的是**纯文本层面的约定**（编码/换行/行尾空白），不是代码风格偏好——
+# 缩进值只是把仓库里文件的实际情况记录下来，不引入新规矩。
+#
+# 反过来要注意：这里改了 charset 或 end_of_line，编辑器会在**下次保存时**
+# 按新规则重写整个文件。所以改动前先确认仓库里现在是什么样（git ls-files --eol）。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = tab
+indent_size = 2
+
+# JSON / CSS / Markdown / SQL 用两空格（仓库现状如此，改了会产生全文件重排的噪音）
+[*.{json,jsonc,yml,yaml,css,md,mdx,sql}]
+indent_style = space
+indent_size = 2
+
+# Markdown 行尾的两个空格是「强制换行」语法，被自动裁剪掉会静默改掉排版；
+# 正文里的缩进也可能是有意的（嵌套列表、代码块）。整类文件都不裁剪行尾空白。
+# 这条同时保护 src/content/blog/*.md —— 那是要逐字节比对的正文真源。
+[*.{md,mdx}]
+trim_trailing_whitespace = false
+
+# Windows 批处理必须 CRLF，否则 cmd.exe 可能报出与内容无关的怪错。
+# 用 .editorconfig 明写，免得被上面的 end_of_line = lf 带到 LF 上去。
+[*.{bat,cmd}]
+end_of_line = crlf

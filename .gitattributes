@@ -1,0 +1,36 @@
+# 统一换行符：仓库里存 LF，工作区也检出 LF。
+#
+# 为什么必须写这个文件：系统级 core.autocrlf=true 会把检出的文本转成 CRLF，
+# 于是同一个文件在仓库里是 LF、在工作区是 CRLF，git status 时不时冒出
+# 「LF will be replaced by CRLF」的警告。更麻烦的是 F 盘的 Markdown 反解产物
+# 要跟 src/content/blog/*.md 做逐字节比对——一边 CRLF 一边 LF 会让每一行都
+# 「不同」，比对就完全失去意义了。
+#
+# .gitattributes 的优先级高于 core.autocrlf，写法上以此为准。
+#
+# 注意：仓库里原本存的就已经是 LF（git ls-files --eol 实测 38 个 i/lf w/crlf），
+# 所以这条规则改变的是工作区，仓库内容一个字节都不会变。
+
+* text=auto eol=lf
+
+# Windows 批处理必须 CRLF。cmd.exe 解析 LF 换行的 .bat 会出问题，
+# 而且报出来的错通常和内容毫无关系，非常难查。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不参与任何文本转换，也不要让 git 试图 diff 它们。
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.avif binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.pdf  binary
+*.zip  binary
+*.sqlite  binary
+*.sqlite3 binary

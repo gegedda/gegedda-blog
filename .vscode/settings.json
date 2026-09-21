@@ -1,0 +1,32 @@
+{
+  // 只放本机编辑器行为。语言/工具链配置归 tsconfig.json 与 astro.config.mjs。
+
+  // 固定为不带 BOM 的 UTF-8。Windows 上编辑器默认可能回落到 GBK(936)，
+  // 一旦把中文正文按 GBK 存回去，文件就永久损坏了。
+  //
+  // 为什么特意强调「不带 BOM」：BOM 会让 YAML frontmatter 解析失败
+  // （`---` 前面多出三个不可见字节），也会让 sqlite3 读 .sql 时首条语句
+  // 报语法错——两处报的错看起来都和编码无关，很难往这上面想。
+  "files.encoding": "utf8",
+
+  // 打开非 UTF-8 的旧文件时先猜编码（能正确识别 GBK 并正常显示），而不是
+  // 一上来就按 UTF-8 硬解成乱码。开这个是为了「看得见」，不是为了让编辑器
+  // 随便换个编码存回去——存回去由上面那行锁死。
+  "files.autoGuessEncoding": true,
+
+  // 与 .editorconfig 的 end_of_line=lf、.gitattributes 的 eol=lf 三处保持一致。
+  // 本机是 Windows、构建机是 Linux，两边换行不一致会产生整文件级的假 diff。
+  // 更具体地说：F 盘反解出的 Markdown 要和 src/content/blog/*.md 逐字节比对，
+  // 一边 CRLF 一边 LF 会让每一行都「不同」，那个比对就失去意义了。
+  "files.eol": "\n",
+
+  // 全局关闭自动裁剪行尾空白。Markdown 里「行尾两个空格」是强制换行语法，
+  // 裁掉等于静默改变作者写下的排版。本仓库的 Markdown 是正文真源，
+  // 宁可全关也不冒这个险（.editorconfig 里也做了同样的声明）。
+  "files.trimTrailingWhitespace": false,
+
+  // 保存时保证文件末尾有一个换行：缺了它 git diff 会显示
+  // "\ No newline at end of file"，逐字节比对时也会差一个字节。
+  // 只补不删（trimFinalNewlines 保持默认 false），避免重排现有文件。
+  "files.insertFinalNewline": true
+}

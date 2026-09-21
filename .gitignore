@@ -14,8 +14,19 @@ pnpm-debug.log*
 
 
 # environment variables
+# 密钥永远不进仓库。模板用 .example 结尾的那份（见下方 wrangler 一节）。
+# 否定规则必须写在对应通配规则之后，否则不起作用。
 .env
-.env.production
+.env.*
+!.env.example
+
+# wrangler dev 读的 Worker 运行时密钥
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# wrangler 本地状态：D1 本地副本、缓存、构建产物
+.wrangler/
 
 # macOS-specific files
 .DS_Store
