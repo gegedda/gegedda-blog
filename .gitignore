@@ -28,6 +28,9 @@ pnpm-debug.log*
 # wrangler 本地状态：D1 本地副本、缓存、构建产物
 .wrangler/
 
+# scripts/ 的生成物与临时验证库（都是派生产物，不入库）
+scripts/out/
+
 # macOS-specific files
 .DS_Store
 

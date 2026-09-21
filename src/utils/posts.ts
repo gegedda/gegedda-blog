@@ -1,5 +1,7 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 
+import { tagSegment } from './tag-segment';
+
 export type Post = CollectionEntry<'blog'>;
 
 /**
@@ -198,14 +200,6 @@ export interface ReadingStats {
 	words: number;
 	/** 预计阅读分钟数，最少 1 */
 	minutes: number;
-}
-
-/**
- * 标签 → URL 片段的**规范形式**（未编码）：小写 + 空格转连字符。
- * 不要在这里编码，编码与否是两个不同的消费方各自的事，见下面两个函数。
- */
-function tagSegment(tag: string): string {
-	return tag.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
 /**
