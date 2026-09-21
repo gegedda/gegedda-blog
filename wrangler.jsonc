@@ -1,0 +1,29 @@
+{
+  // 这是 Cloudflare 侧的部署配置。Astro 的 Cloudflare adapter 会读它。
+  //
+  // name 与 Pages 项目名（gegedda-blog）**故意不同**：
+  // 改造期间原 Pages 项目继续服务线上静态站，新 Worker 用新名字并行上线，
+  // 到 P7 才切换。这就是整个改造的干净回滚点。
+  "name": "gegedda-blog-ssr",
+
+  // 兼容性日期。定下来之后不要再改——它决定了运行时行为按哪一天的规范执行，
+  // 改动等于把全站的行为基线挪一次。
+  "compatibility_date": "2026-09-21",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+
+      // 库名在账号内必须唯一。加了 -db 后缀，避免和 Pages 项目名撞。
+      "database_name": "gegedda-blog-db",
+
+      // ⚠️ 下面是占位符。执行 `wrangler d1 create gegedda-blog-db` 之后，
+      //    把输出里的 database_id 填到这里。
+      //
+      // 本地开发（wrangler dev / d1 execute --local）用不到这个值——
+      // miniflare 按 binding 名在 .wrangler/state 下建本地库。
+      // 但 `--remote` 和 `wrangler deploy` 必须有真实 id。
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
